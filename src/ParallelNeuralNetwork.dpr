@@ -1,5 +1,7 @@
 program ParallelNeuralNetwork;
 
+{$R 'Kernels.res' 'Kernels.rc'}
+
 uses
   Vcl.Forms,
   uMain in 'uMain.pas' {Form1},
