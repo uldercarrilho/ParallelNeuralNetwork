@@ -3,7 +3,7 @@ object Form1: TForm1
   Top = 0
   Caption = 'Parallel Neural Network'
   ClientHeight = 777
-  ClientWidth = 623
+  ClientWidth = 615
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -36,8 +36,8 @@ object Form1: TForm1
     Caption = 'Epochs Computed: 0'
   end
   object btnLoad: TButton
-    Left = 448
-    Top = 102
+    Left = 529
+    Top = 71
     Width = 75
     Height = 25
     Caption = 'Load'
@@ -53,7 +53,7 @@ object Form1: TForm1
     TabOrder = 1
   end
   object btnLearn: TButton
-    Left = 529
+    Left = 530
     Top = 102
     Width = 75
     Height = 25
@@ -115,7 +115,7 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 0
-      Value = 2
+      Value = 4
     end
     object seHidden: TSpinEdit
       Left = 67
@@ -125,7 +125,7 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 1
-      Value = 3
+      Value = 5
     end
     object seOutput: TSpinEdit
       Left = 123
@@ -135,34 +135,37 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 2
-      Value = 1
+      Value = 3
     end
   end
   object lbledtData: TLabeledEdit
     Left = 8
     Top = 104
-    Width = 400
+    Width = 473
     Height = 21
     EditLabel.Width = 40
     EditLabel.Height = 13
     EditLabel.Caption = 'Data file'
     TabOrder = 6
     Text = 
-      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\samples' +
-      '-XOR-2x1.csv'
+      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Iris\ir' +
+      'is-learn.csv'
   end
   object lbledtWeights: TLabeledEdit
     Left = 8
     Top = 144
-    Width = 400
+    Width = 473
     Height = 21
     EditLabel.Width = 56
     EditLabel.Height = 13
     EditLabel.Caption = 'Weights file'
     TabOrder = 7
+    Text = 
+      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Iris\ir' +
+      'is-weights.csv'
   end
   object btnData: TButton
-    Left = 408
+    Left = 480
     Top = 103
     Width = 23
     Height = 23
@@ -171,13 +174,22 @@ object Form1: TForm1
     OnClick = btnDataClick
   end
   object btnWeights: TButton
-    Left = 408
+    Left = 480
     Top = 143
     Width = 23
     Height = 23
     Caption = '...'
     TabOrder = 9
     OnClick = btnWeightsClick
+  end
+  object btnTests: TButton
+    Left = 529
+    Top = 144
+    Width = 75
+    Height = 25
+    Caption = 'Tests'
+    TabOrder = 10
+    OnClick = btnTestsClick
   end
   object dlgFiles: TOpenDialog
     Filter = 'CSV File (*.csv)|*.csv'

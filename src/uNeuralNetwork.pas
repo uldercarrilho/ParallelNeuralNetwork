@@ -3,7 +3,7 @@ unit uNeuralNetwork;
 interface
 
 uses
-  uSamples, System.Classes;
+  uSamples, System.Classes, System.SysUtils;
 
 type
   TTopology = record
@@ -42,7 +42,10 @@ type
     destructor Destroy; override;
 
     procedure Learn(ASamplesSet: TSamplesSet);
+    procedure Tests(ASamplesSet: TSamplesSet);
     procedure DefineRandomWeights;
+    procedure SaveWeights(const AFileName: string);
+    procedure LoadWeights(const AFileName: string);
 
     property Eta: Single read FEta write FEta;
     property Log: TStrings read FLog write FLog;
@@ -51,7 +54,7 @@ type
 implementation
 
 uses
-  Math, System.SysUtils;
+  Math, IdGlobal;
 
 { TNeuralNetwork }
 
@@ -74,6 +77,91 @@ begin
   SetLength(FDeltaHidden, FTopology.Hidden + 1);
 
   FLog := nil;
+end;
+
+destructor TNeuralNetwork.Destroy;
+begin
+  SetLength(FNeuronsInput, 0);
+  SetLength(FNeuronsHidden, 0);
+  SetLength(FNeuronsOutput, 0);
+
+  SetLength(FWeightsInputHidden, 0, 0);
+  SetLength(FWeightsHiddenOutput, 0, 0);
+
+  SetLength(FDeltaOutput, 0);
+  SetLength(FDeltaHidden, 0);
+
+  inherited;
+end;
+
+procedure TNeuralNetwork.SaveWeights(const AFileName: string);
+var
+  Weights: TStringList;
+  Line: string;
+  i, h, o: Integer;
+begin
+  try
+    Weights := TStringList.Create;
+
+    for i := 0 to FTopology.Input {+ BIAS} do
+    begin
+      Line := FloatToStr(FWeightsInputHidden[i][0]);
+      for h := 1 to FTopology.Hidden - 1 do
+        Line := Line + ';' + FloatToStr(FWeightsInputHidden[i][h]);
+
+      Weights.Add(Line);
+    end;
+
+    for h := 0 to FTopology.Hidden {+ BIAS} do
+    begin
+      Line := FloatToStr(FWeightsHiddenOutput[h][0]);
+      for o := 1 to FTopology.Output - 1 do
+        Line := Line + ';' + FloatToStr(FWeightsHiddenOutput[h][o]);
+
+      Weights.Add(Line);
+    end;
+
+    Weights.SaveToFile(AFileName);
+  finally
+    FreeAndNil(Weights);
+  end;
+end;
+
+procedure TNeuralNetwork.LoadWeights(const AFileName: string);
+var
+  Weights: TStringList;
+  i, h, o: Integer;
+  Line: string;
+  Value: string;
+begin
+  try
+    Weights := TStringList.Create;
+    Weights.LoadFromFile(AFileName);
+
+    for i := 0 to FTopology.Input {+ BIAS} do
+    begin
+      Line := Weights.Strings[0];
+      for h := 0 to FTopology.Hidden - 1 do
+      begin
+        Value := Fetch(Line, ';');
+        FWeightsInputHidden[i][h] := StrToFloat(Value);
+      end;
+      Weights.Delete(0);
+    end;
+
+    for h := 0 to FTopology.Hidden {+ BIAS} do
+    begin
+      Line := Weights.Strings[0];
+      for o := 0 to FTopology.Output - 1 do
+      begin
+        Value := Fetch(Line, ';');
+        FWeightsHiddenOutput[h][o] := StrToFloat(Value);
+      end;
+      Weights.Delete(0);
+    end;
+  finally
+    FreeAndNil(Weights);
+  end;
 end;
 
 procedure TNeuralNetwork.DefineRandomWeights;
@@ -100,21 +188,6 @@ begin
       //WriteLog('FWeightsHiddenOutput[%d][%d]=%.6f', [i, j, FWeightsHiddenOutput[i][j]]);
     end;
   end;
-end;
-
-destructor TNeuralNetwork.Destroy;
-begin
-  SetLength(FNeuronsInput, 0);
-  SetLength(FNeuronsHidden, 0);
-  SetLength(FNeuronsOutput, 0);
-
-  SetLength(FWeightsInputHidden, 0, 0);
-  SetLength(FWeightsHiddenOutput, 0, 0);
-
-  SetLength(FDeltaOutput, 0);
-  SetLength(FDeltaHidden, 0);
-
-  inherited;
 end;
 
 procedure TNeuralNetwork.FeedForward(ASample: PSample);
@@ -205,7 +278,9 @@ procedure TNeuralNetwork.Learn(ASamplesSet: TSamplesSet);
 var
   Row: Integer;
   Sample: PSample;
+  Error: Single;
 begin
+  Error := 0;
   for Row := 0 to ASamplesSet.SamplesCount - 1 do
   begin
     Sample := @ASamplesSet.Samples[Row];
@@ -213,11 +288,15 @@ begin
     BackPropagation(Sample);
 
     //ReportResults(Sample);
+    Error := Error + Abs((Sample^[FTopology.Input]) - Abs(FNeuronsOutput[0]));
 
-    FLog.Strings[Row] := FLog.Strings[Row] + ';' + FloatToStr(Sample^[FTopology.Input] - FNeuronsOutput[0]);
+//    if Row < 10 then
+//      FLog.Strings[Row] := FLog.Strings[Row] + ';' + FloatToStr(Sample^[FTopology.Input] - FNeuronsOutput[0]);
 
     //FLog.Add('---------- ---------- ----------');
   end;
+  Error := Error / ASamplesSet.SamplesCount;
+  FLog.Add(FloatToStr(Error));
 end;
 
 procedure TNeuralNetwork.ReportResults(ASample: PSample);
@@ -232,10 +311,29 @@ begin
   for i := 0 to FTopology.Output - 1 do
   begin
     iSample := FTopology.Input + i;
-    Info := Info + FloatToStr(FNeuronsOutput[i]) + ';';
-    Info := Info + FloatToStr(ASample^[iSample] - FNeuronsOutput[i]);
+    Info := Info + ';' + FloatToStr(FNeuronsOutput[i]);
+    Info := Info + ';' + FloatToStr(ASample^[iSample] - FNeuronsOutput[i]);
   end;
   FLog.Add(Info);
+end;
+
+procedure TNeuralNetwork.Tests(ASamplesSet: TSamplesSet);
+var
+  Row: Integer;
+  Sample: PSample;
+  //Error: Single;
+begin
+  //Error := 0;
+  for Row := 0 to ASamplesSet.SamplesCount - 1 do
+  begin
+    Sample := @ASamplesSet.Samples[Row];
+    FeedForward(Sample);
+
+    ReportResults(Sample);
+    //Error := Error + Abs((Sample^[FTopology.Input]) - Abs(FNeuronsOutput[0]));
+  end;
+  //Error := Error / ASamplesSet.SamplesCount;
+  //FLog.Add(FloatToStr(Error));
 end;
 
 procedure TNeuralNetwork.WriteLog(const Msg: string; Args: array of const);

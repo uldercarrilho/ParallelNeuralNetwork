@@ -28,10 +28,12 @@ type
     btnWeights: TButton;
     lblEta: TLabel;
     lblEpochsComputed: TLabel;
+    btnTests: TButton;
     procedure btnLoadClick(Sender: TObject);
     procedure btnDataClick(Sender: TObject);
     procedure btnWeightsClick(Sender: TObject);
     procedure btnLearnClick(Sender: TObject);
+    procedure btnTestsClick(Sender: TObject);
   private
     { Private declarations }
   public
@@ -83,8 +85,8 @@ begin
     mmoLog.Lines.Clear;
     mmoLog.Lines.BeginUpdate;
 
-    for i := 0 to Samples.SamplesCount - 1 do
-      mmoLog.Lines.Add(IntToStr(i));
+//    for i := 0 to 9 do
+//      mmoLog.Lines.Add(IntToStr(i));
 
     TickCount := TThread.GetTickCount;
 
@@ -94,18 +96,24 @@ begin
       Net.Learn(Samples);
 
       lblEpochsComputed.Tag := lblEpochsComputed.Tag + 1;
-      lblEpochsComputed.Caption := 'Epochs Computed: ' + IntToStr(lblEpochsComputed.Tag);
-      Application.ProcessMessages;
+      if Epochs mod 100 = 0 then
+      begin
+        lblEpochsComputed.Caption := 'Epochs Computed: ' + IntToStr(lblEpochsComputed.Tag);
+        Application.ProcessMessages;
+      end;
     end;
 
     TickCount := TThread.GetTickCount - TickCount;
     ShowMessage('TickCount = ' + IntToStr(TickCount));
     //mmoLog.Lines.Add('TickCount = ' + IntToStr(TickCount));
 
+    Net.SaveWeights(lbledtWeights.Text);
+
     mmoLog.Lines.EndUpdate;
     mmoLog.Lines.SaveToFile('D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\trained.csv');
   finally
     FreeAndNil(Net);
+    FreeAndNil(Samples);
   end;
 end;
 
@@ -132,6 +140,42 @@ begin
       mmoLog.Lines.Add(Line);
     end;
   finally
+    FreeAndNil(Samples);
+  end;
+end;
+
+procedure TForm1.btnTestsClick(Sender: TObject);
+const
+  DELIMITER = ';';
+var
+  Net: TNeuralNetwork;
+  Topology: TTopology;
+  Samples: TSamplesSet;
+  Epochs: Integer;
+  TickCount: Cardinal;
+  i: Integer;
+begin
+  Topology.Input := seInput.Value;
+  Topology.Hidden := seHidden.Value;
+  Topology.Output := seOutput.Value;
+
+  try
+    Samples := TSamplesSet.Create;
+    Samples.LoadCSVFile(lbledtData.Text, Topology.Input, Topology.Output, DELIMITER);
+
+    Net := TNeuralNetwork.Create(Topology);
+    Net.Log := mmoLog.Lines;
+    Net.LoadWeights(lbledtWeights.Text);
+
+    mmoLog.Lines.Clear;
+    mmoLog.Lines.BeginUpdate;
+
+    Net.Tests(Samples);
+
+    mmoLog.Lines.EndUpdate;
+    //mmoLog.Lines.SaveToFile('D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\tests.csv');
+  finally
+    FreeAndNil(Net);
     FreeAndNil(Samples);
   end;
 end;

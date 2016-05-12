@@ -84,25 +84,25 @@
    brief description.  The number of rings is the value to predict: either
    as a continuous value or as a classification problem.
 
-	Name		Data Type	Meas.	Description
-	----		---------	-----	-----------
-	Sex		nominal			M, F, and I (infant)
-	Length		continuous	mm	Longest shell measurement
-	Diameter	continuous	mm	perpendicular to length
-	Height		continuous	mm	with meat in shell
+	Name			Data Type	Meas.	Description
+	----			---------	-----	-----------
+	Sex				nominal		M, F, and I (infant)
+	Length			continuous	mm		Longest shell measurement
+	Diameter		continuous	mm		perpendicular to length
+	Height			continuous	mm		with meat in shell
 	Whole weight	continuous	grams	whole abalone
 	Shucked weight	continuous	grams	weight of meat
 	Viscera weight	continuous	grams	gut weight (after bleeding)
 	Shell weight	continuous	grams	after being dried
-	Rings		integer			+1.5 gives the age in years
+	Rings			integer				+1.5 gives the age in years
 
    Statistics for numeric domains:
 
-		Length	Diam	Height	Whole	Shucked	Viscera	Shell	Rings
-	Min	0.075	0.055	0.000	0.002	0.001	0.001	0.002	    1
-	Max	0.815	0.650	1.130	2.826	1.488	0.760	1.005	   29
+			Length	Diam	Height	Whole	Shucked	Viscera	Shell	Rings
+	Min		0.075	0.055	0.000	0.002	0.001	0.001	0.002	    1
+	Max		0.815	0.650	1.130	2.826	1.488	0.760	1.005	   29
 	Mean	0.524	0.408	0.140	0.829	0.359	0.181	0.239	9.934
-	SD	0.120	0.099	0.042	0.490	0.222	0.110	0.139	3.224
+	SD		0.120	0.099	0.042	0.490	0.222	0.110	0.139	3.224
 	Correl	0.557	0.575	0.557	0.540	0.421	0.504	0.628	  1.0
 
 
