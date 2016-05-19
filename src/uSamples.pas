@@ -15,6 +15,8 @@ type
     FSamples: TSamples;
     FSamplesCount: Cardinal;
   public
+    FRaw: array of Single;
+
     constructor Create;
     destructor Destroy; override;
 
@@ -25,6 +27,7 @@ type
     property SampleSize: Cardinal read FSampleSize;
     property Samples: TSamples read FSamples;
     property SamplesCount: Cardinal read FSamplesCount;
+
   end;
 
 implementation
@@ -53,6 +56,7 @@ var
   Row, Col: Cardinal;
   CSVFile: TStringList;
   Line: TStringList;
+  i: Integer;
 begin
   // TODO : lançar exceção
   if not FileExists(AFileName) then
@@ -76,13 +80,19 @@ begin
     FSamplesCount := CSVFile.Count;
 
     SetLength(FSamples, FSamplesCount, FSampleSize);
+    SetLength(FRaw, FSamplesCount * FSampleSize);
 
+    i := 0;
     for Row := 0 to FSamplesCount - 1 do
     begin
       Line.DelimitedText := CSVFile.Strings[Row];
 
       for Col := 0 to FSampleSize - 1 do
+      begin
         FSamples[Row][Col] := StrToFloat(Line.Strings[Col]);
+        FRaw[i] := FSamples[Row][Col];
+        Inc(i);
+      end;
     end;
   finally
     FreeAndNil(Line);

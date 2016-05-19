@@ -69,7 +69,7 @@ object Form1: TForm1
     MaxValue = 0
     MinValue = 0
     TabOrder = 3
-    Value = 1000
+    Value = 2000
   end
   object edtEta: TEdit
     Left = 208
@@ -115,7 +115,7 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 0
-      Value = 4
+      Value = 2
     end
     object seHidden: TSpinEdit
       Left = 67
@@ -125,7 +125,7 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 1
-      Value = 5
+      Value = 3
     end
     object seOutput: TSpinEdit
       Left = 123
@@ -135,7 +135,7 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 2
-      Value = 3
+      Value = 1
     end
   end
   object lbledtData: TLabeledEdit
@@ -148,12 +148,12 @@ object Form1: TForm1
     EditLabel.Caption = 'Data file'
     TabOrder = 6
     Text = 
-      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Iris\ir' +
-      'is-learn.csv'
+      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\XOR\sam' +
+      'ples-to-learn.csv'
   end
   object lbledtWeights: TLabeledEdit
     Left = 8
-    Top = 144
+    Top = 145
     Width = 473
     Height = 21
     EditLabel.Width = 56
@@ -161,8 +161,8 @@ object Form1: TForm1
     EditLabel.Caption = 'Weights file'
     TabOrder = 7
     Text = 
-      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Iris\ir' +
-      'is-weights.csv'
+      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\XOR\wei' +
+      'ghts.csv'
   end
   object btnData: TButton
     Left = 480
@@ -190,6 +190,24 @@ object Form1: TForm1
     Caption = 'Tests'
     TabOrder = 10
     OnClick = btnTestsClick
+  end
+  object btnGPU: TButton
+    Left = 529
+    Top = 40
+    Width = 75
+    Height = 25
+    Caption = 'GPU'
+    TabOrder = 11
+    OnClick = btnGPUClick
+  end
+  object btnKernels: TButton
+    Left = 529
+    Top = 9
+    Width = 75
+    Height = 25
+    Caption = 'Kernels'
+    TabOrder = 12
+    OnClick = btnKernelsClick
   end
   object dlgFiles: TOpenDialog
     Filter = 'CSV File (*.csv)|*.csv'

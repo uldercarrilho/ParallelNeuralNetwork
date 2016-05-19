@@ -29,11 +29,15 @@ type
     lblEta: TLabel;
     lblEpochsComputed: TLabel;
     btnTests: TButton;
+    btnGPU: TButton;
+    btnKernels: TButton;
     procedure btnLoadClick(Sender: TObject);
     procedure btnDataClick(Sender: TObject);
     procedure btnWeightsClick(Sender: TObject);
     procedure btnLearnClick(Sender: TObject);
     procedure btnTestsClick(Sender: TObject);
+    procedure btnGPUClick(Sender: TObject);
+    procedure btnKernelsClick(Sender: TObject);
   private
     { Private declarations }
   public
@@ -46,7 +50,7 @@ var
 implementation
 
 uses
-  uSamples, uNeuralNetwork;
+  uSamples, uNeuralNetwork, uNeuralNetworkOpenCL;
 
 {$R *.dfm}
 
@@ -54,6 +58,88 @@ procedure TForm1.btnDataClick(Sender: TObject);
 begin
   if dlgFiles.Execute then
     lbledtData.Text := dlgFiles.FileName;
+end;
+
+procedure TForm1.btnGPUClick(Sender: TObject);
+const
+  DELIMITER = ';';
+var
+  Net: TNeuralNetwork;
+  Topology: TTopology;
+  Samples: TSamplesSet;
+  Epochs: Integer;
+  TickCount: Cardinal;
+  i: Integer;
+begin
+  Topology.Input := seInput.Value;
+  Topology.Hidden := seHidden.Value;
+  Topology.Output := seOutput.Value;
+
+  Epochs := seEpochs.Value;
+
+  try
+    Samples := TSamplesSet.Create;
+    Samples.LoadCSVFile(lbledtData.Text, Topology.Input, Topology.Output, DELIMITER);
+
+    Net := TNeuralNetwork.Create(Topology);
+    Net.Log := mmoLog.Lines;
+    Net.LoadGPU(Samples);
+
+    Exit;
+
+    Net.Eta := StrToFloat(edtEta.Text);
+    Net.DefineRandomWeights;
+
+    mmoLog.Lines.Clear;
+    mmoLog.Lines.BeginUpdate;
+
+//    for i := 0 to 9 do
+//      mmoLog.Lines.Add(IntToStr(i));
+
+    TickCount := TThread.GetTickCount;
+
+    lblEpochsComputed.Tag := 0;
+    for Epochs := Epochs downto 0 do
+    begin
+      Net.Learn(Samples);
+
+      lblEpochsComputed.Tag := lblEpochsComputed.Tag + 1;
+      if Epochs mod 100 = 0 then
+      begin
+        lblEpochsComputed.Caption := 'Epochs Computed: ' + IntToStr(lblEpochsComputed.Tag);
+        Application.ProcessMessages;
+      end;
+    end;
+
+    TickCount := TThread.GetTickCount - TickCount;
+    ShowMessage('TickCount = ' + IntToStr(TickCount));
+    //mmoLog.Lines.Add('TickCount = ' + IntToStr(TickCount));
+
+    Net.SaveWeights(lbledtWeights.Text);
+
+    mmoLog.Lines.EndUpdate;
+    mmoLog.Lines.SaveToFile('D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\trained.csv');
+  finally
+    FreeAndNil(Net);
+    FreeAndNil(Samples);
+  end;
+end;
+
+procedure TForm1.btnKernelsClick(Sender: TObject);
+var
+  NNOpenCL: TNeuralNetworkOpenCL;
+begin
+  try
+    NNOpenCL := TNeuralNetworkOpenCL.Create;
+    NNOpenCL.Log := mmoLog.Lines;
+    NNOpenCL.BuildKernel;
+    //NNOpenCL.Multiply;
+    //NNOpenCL.DeltaOutput;
+    //NNOpenCL.DeltaHidden;
+    NNOpenCL.UpdateWeights;
+  finally
+    FreeAndNil(NNOpenCL);
+  end;
 end;
 
 procedure TForm1.btnLearnClick(Sender: TObject);

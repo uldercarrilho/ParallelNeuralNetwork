@@ -59,6 +59,7 @@ type
     procedure DefineRandomWeights;
     procedure SaveWeights(const AFileName: string);
     procedure LoadWeights(const AFileName: string);
+    procedure LoadGPU(ASamplesSet: TSamplesSet);
 
     property Eta: Single read FEta write FEta;
     property Log: TStrings read FLog write FLog;
@@ -89,7 +90,7 @@ begin
     FLog.Add('BuildLog: ' + AProgram.BuildLog[APlatform.Devices[0]]);
   end;
 
-  FKernel := AProgram.Kernels[0];
+  FKernel := AProgram.Kernels[2];
   FCommandQueue := FContext.CreateCommandQueue();
 end;
 
@@ -113,7 +114,7 @@ begin
 
   FLog := nil;
 
-  //BuildKernel;
+  BuildKernel;
 end;
 
 destructor TNeuralNetwork.Destroy;
@@ -162,6 +163,42 @@ begin
   finally
     FreeAndNil(Weights);
   end;
+end;
+
+procedure TNeuralNetwork.LoadGPU(ASamplesSet: TSamplesSet);
+var
+  Resultado: array of Single;
+  Amostras: IOCLBuffer;
+  Buffer: IOCLBuffer;
+  BufferSize: Cardinal;
+  i: Integer;
+begin
+  BufferSize := ASamplesSet.SamplesCount * ASamplesSet.SampleSize;
+  SetLength(Resultado, BufferSize);
+
+  Amostras := FContext.CreateBuffer([TOCLMemoryFlag.ReadOnly, TOCLMemoryFlag.CopyHostPtr], BufferSize * SizeOf(Single), @(ASamplesSet.FRaw[0]));
+  Buffer := FContext.CreateBuffer([TOCLMemoryFlag.WriteOnly], BufferSize * SizeOf(Single));
+
+  // Create OpenCL buffers
+//  ACLBuffer1 := FContext.CreateBuffer([TOCLMemoryFlag.ReadOnly, TOCLMemoryFlag.CopyHostPtr], BUFFER_SIZE * SizeOf(Single), @FBuffer1[0]);
+//  ACLBuffer2 := FContext.CreateBuffer([TOCLMemoryFlag.ReadOnly, TOCLMemoryFlag.CopyHostPtr], BUFFER_SIZE * SizeOf(Single), @FBuffer2[0]);
+//  ACLBuffer3 := FContext.CreateBuffer([TOCLMemoryFlag.ReadOnly, TOCLMemoryFlag.CopyHostPtr], BUFFER_SIZE * SizeOf(Single), @FBuffer3[0]);
+//  ACLResultBuffer := FContext.CreateBuffer( [TOCLMemoryFlag.WriteOnly], BUFFER_SIZE * SizeOf(Single) );
+//  GlobalBuffer := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite], 10, nil);
+
+  // Set the Kernel arguments
+  FKernel.Arguments[0].Access.SetBuffer(Amostras);
+  FKernel.Arguments[1].Access.SetBuffer(Buffer);
+  FKernel.Arguments[2].Access.SetValue<Cardinal>(ASamplesSet.InputSize);
+  FKernel.Arguments[3].Access.SetValue<Cardinal>(ASamplesSet.OutputSize);
+  FKernel.Arguments[4].Access.SetValue<Cardinal>(ASamplesSet.SamplesCount);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernel, TOCLGlobalDimensions.Create([ASamplesSet.SamplesCount]));
+
+  FCommandQueue.EnqueueReadBuffer(Buffer, True, @Resultado[0]);
+
+  for i := 0 to ASamplesSet.SamplesCount - 1 do
+    Log.Add(IntToStr(i) + ' = ' + FloatToStr(Resultado[i]));
 end;
 
 procedure TNeuralNetwork.LoadWeights(const AFileName: string);
@@ -307,9 +344,9 @@ begin
     //WriteLog('FDeltaHidden[%d]=%.6f', [h, FDeltaHidden[h]]);
   end;
 
-  for o := 0 to FTopology.Output - 1 do
+  for h := 0 to FTopology.Hidden { +1 BIAS } do
   begin
-    for h := 0 to FTopology.Hidden { +1 BIAS } do
+    for o := 0 to FTopology.Output - 1 do
     begin
       FWeightsHiddenOutput[h][o] := FWeightsHiddenOutput[h][o] + FEta * FDeltaOutput[o] * FNeuronsHidden[h];
       //WriteLog('FWeightsHiddenOutput[%d][%d]=%.6f', [h, o, FWeightsHiddenOutput[h][o]]);
