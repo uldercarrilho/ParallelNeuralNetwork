@@ -90,6 +90,7 @@ begin
       for Col := 0 to FSampleSize - 1 do
       begin
         FSamples[Row][Col] := StrToFloat(Line.Strings[Col]);
+        // usado para vetorizar os inputs
         FRaw[i] := FSamples[Row][Col];
         Inc(i);
       end;

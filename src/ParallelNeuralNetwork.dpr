@@ -7,7 +7,9 @@ uses
   uMain in 'uMain.pas' {Form1},
   uSamples in 'uSamples.pas',
   uNeuralNetwork in 'uNeuralNetwork.pas',
-  uNeuralNetworkOpenCL in 'uNeuralNetworkOpenCL.pas';
+  uNeuralNetworkOpenCL in 'uNeuralNetworkOpenCL.pas',
+  uNeuralNetworkBase in 'uNeuralNetworkBase.pas',
+  uHelpers in 'uHelpers.pas';
 
 {$R *.res}
 

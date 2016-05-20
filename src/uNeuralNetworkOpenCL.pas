@@ -3,12 +3,11 @@ unit uNeuralNetworkOpenCL;
 interface
 
 uses
-  Mitov.OpenCL, System.Classes;
+  Mitov.OpenCL, System.Classes, uNeuralNetworkBase, uSamples;
 
 type
-  TNeuralNetworkOpenCL = class
+  TNeuralNetworkOpenCL = class(TNeuralNetworkBase)
   private
-    FLog: TStrings;
     FContext: IOCLContext;
     FCommandQueue: IOCLCommandQueue;
     FKernelMultiply: IOCLKernel;
@@ -16,30 +15,44 @@ type
     FKernelDeltaOutput: IOCLKernel;
     FKernelDeltaHidden: IOCLKernel;
     FKernelUpdateWeights: IOCLKernel;
+
+    FBufferNeuronsInput: IOCLBuffer;
+    FBufferNeuronsHidden: IOCLBuffer;
+    FBufferNeuronsOutput: IOCLBuffer;
+
+    FBufferWInputHidden: IOCLBuffer;
+    FBufferWHiddenOutput: IOCLBuffer;
+
+    FBufferDeltaOutput: IOCLBuffer;
+    FBufferDeltaHidden: IOCLBuffer;
+
+
+    FSumInputHidden: array of Single;
+    FSumHiddenOutput: array of Single;
+
+    FBufferSumInputHidden: IOCLBuffer;
+    FBufferSumHiddenOutput: IOCLBuffer;
+
     function GetOpenCLSource(const AResourceName: string): string;
+  protected
+    procedure FeedForward(ASample: PSample); override;
+    procedure BackPropagation(ASample: PSample); override;
   public
-    constructor Create;
-    destructor Destroy; override;
+    constructor Create(ATopology: TTopology); override;
     procedure BuildKernel;
     procedure Multiply;
     procedure DeltaOutput;
     procedure DeltaHidden;
     procedure UpdateWeights;
-
-    property Log: TStrings read FLog write FLog;
   end;
 
 implementation
 
 uses
-  System.Types, System.SysUtils;
+  System.Types, System.SysUtils, uHelpers;
 
 { TNeuralNetworkOpenCL }
 
-constructor TNeuralNetworkOpenCL.Create;
-begin
-  FLog := nil;
-end;
 
 procedure TNeuralNetworkOpenCL.DeltaHidden;
 const
@@ -143,10 +156,75 @@ begin
   FLog.Add('');
 end;
 
-destructor TNeuralNetworkOpenCL.Destroy;
+procedure TNeuralNetworkOpenCL.FeedForward(ASample: PSample);
+var
+  i: Integer;
 begin
+  for i := 0 to FTopology.Input - 1 do
+  begin
+    FNeuronsInput[i] := ASample^[i];
+    FLog.AddFmt('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
+  end;
 
-  inherited;
+  {$REGION 'Calcular ativação INPUT --> HIDDEN'}
+  FKernelMultiply.Arguments[0].Access.SetBuffer(FBufferNeuronsInput);
+  FKernelMultiply.Arguments[1].Access.SetBuffer(FBufferWInputHidden);
+  FKernelMultiply.Arguments[2].Access.SetBuffer(FBufferSumInputHidden);
+  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
+  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([FTopology.Input + 1, FTopology.Hidden]));
+  FCommandQueue.EnqueueReadBuffer(FBufferSumInputHidden, True, @FSumInputHidden[0]);
+
+  for i := 0 to (FTopology.Input + 1) * FTopology.Hidden - 1 do
+    FLog.Add(Format('FSumInputHidden[%d] = %.6f', [i, FSumInputHidden[i]]));
+
+  FLog.Add('');
+
+  FKernelSigmoide.Arguments[0].Access.SetBuffer(FBufferSumInputHidden);
+  FKernelSigmoide.Arguments[1].Access.SetBuffer(FBufferNeuronsHidden);
+  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
+  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(FTopology.Hidden);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([FTopology.Hidden]));
+  FCommandQueue.EnqueueReadBuffer(FBufferNeuronsHidden, True, @FNeuronsHidden[0]);
+
+  for i := 0 to FTopology.Hidden - 1 do
+    FLog.Add(Format('FNeuronsHidden[%d] = %.6f', [i, FNeuronsHidden[i]]));
+
+  FLog.Add('');
+  {$ENDREGION}
+
+  {$REGION 'Calcular ativação HIDDEN --> OUTPUT'}
+  FKernelMultiply.Arguments[0].Access.SetBuffer(FBufferNeuronsHidden);
+  FKernelMultiply.Arguments[1].Access.SetBuffer(FBufferWHiddenOutput);
+  FKernelMultiply.Arguments[2].Access.SetBuffer(FBufferSumHiddenOutput);
+  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
+  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(FTopology.Output);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([FTopology.Hidden + 1, FTopology.Output]));
+  FCommandQueue.EnqueueReadBuffer(FBufferSumHiddenOutput, True, @FSumHiddenOutput[0]);
+
+  for i := 0 to (FTopology.Hidden + 1) * FTopology.Output - 1 do
+    FLog.Add(Format('FSumHiddenOutput[%d] = %.6f', [i, FSumHiddenOutput[i]]));
+
+  FLog.Add('');
+
+  FKernelSigmoide.Arguments[0].Access.SetBuffer(FBufferSumHiddenOutput);
+  FKernelSigmoide.Arguments[1].Access.SetBuffer(FBufferNeuronsOutput);
+  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
+  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(FTopology.Output);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([FTopology.Output]));
+  FCommandQueue.EnqueueReadBuffer(FBufferNeuronsOutput, True, @FNeuronsOutput[0]);
+
+  for i := 0 to FTopology.Output - 1 do
+    FLog.Add(Format('FNeuronsOutput[%d] = %.6f', [i, FNeuronsOutput[i]]));
+
+  FLog.Add('');
+  {$ENDREGION}
+
+  raise Exception.Create('Error Message');
 end;
 
 function TNeuralNetworkOpenCL.GetOpenCLSource(const AResourceName: string): string;
@@ -226,6 +304,8 @@ begin
 
   for i := 0 to OUTPUT_SIZE - 1 do
     FLog.Add(Format('Outputs[%d] = %f', [i, Outputs[i]]));
+
+  FLog.Add('');
 end;
 
 procedure TNeuralNetworkOpenCL.UpdateWeights;
@@ -281,12 +361,16 @@ begin
   FLog.Add('');
 end;
 
+procedure TNeuralNetworkOpenCL.BackPropagation(ASample: PSample);
+begin
+
+end;
+
 procedure TNeuralNetworkOpenCL.BuildKernel;
 var
   sOpenCLSource: string;
   APlatform: IOCLPlatform;
   AProgram: IOCLProgram;
-  i: Integer;
 begin
   APlatform := TOpenCL.Platforms[0];
   // TODO : avaliar melhor forma de usar apenas a GPU
@@ -306,13 +390,38 @@ begin
     end;
   end;
 
-  FKernelMultiply := AProgram.Kernels[1];
-  FKernelSigmoide := AProgram.Kernels[2];
-  FKernelDeltaOutput := AProgram.Kernels[0];
-  FKernelDeltaHidden := AProgram.Kernels[0];
-  FKernelUpdateWeights := AProgram.Kernels[0];
+  FKernelMultiply := AProgram.Kernel['multiply'];
+  FKernelSigmoide := AProgram.Kernel['sigmoide'];
+  FKernelDeltaOutput := AProgram.Kernel['calculateDeltaOutput'];
+  FKernelDeltaHidden := AProgram.Kernel['calculateDeltaHidden'];
+  FKernelUpdateWeights := AProgram.Kernel['updateWeights'];
 
   FCommandQueue := FContext.CreateCommandQueue();
+end;
+
+constructor TNeuralNetworkOpenCL.Create(ATopology: TTopology);
+begin
+  inherited;
+
+  SetLength(FSumInputHidden, (FTopology.Input + 1) * FTopology.Hidden);
+  SetLength(FSumHiddenOutput, (FTopology.Hidden + 1) * FTopology.Output);
+
+  BuildKernel;
+
+  FBufferNeuronsInput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Input + 1) * SizeOf(Single), @FNeuronsInput[0]); // +1 for BIAS
+  FBufferNeuronsHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Hidden + 1) * SizeOf(Single), @FNeuronsHidden[0]); // +1 for BIAS
+  FBufferNeuronsOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Output) * SizeOf(Single), @FNeuronsOutput[0]);
+
+  FBufferWInputHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * FTopology.Hidden * SizeOf(Single), @FWInputHidden[0]);
+  FBufferWHiddenOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * FTopology.Output * SizeOf(Single), @FWHiddenOutput[0]);
+
+  FBufferSumInputHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * FTopology.Hidden * SizeOf(Single), @FSumInputHidden[0]);
+  FBufferSumHiddenOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * FTopology.Output * SizeOf(Single), @FSumHiddenOutput[0]);
+
+  FBufferDeltaOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Output) * SizeOf(Single), @FDeltaOutput[0]);
+  FBufferDeltaHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Hidden + 1) * SizeOf(Single), @FDeltaHidden[0]); // +1 for BIAS
+
+
 end;
 
 end.
