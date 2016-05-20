@@ -26,7 +26,7 @@ type
 implementation
 
 uses
-  Math, IdGlobal, Winapi.Windows;
+  Math, IdGlobal, Winapi.Windows, uHelpers;
 
 { TNeuralNetwork }
 
@@ -50,15 +50,21 @@ var
   i: Integer;
 //  Sum: Single;
 begin
-  //WriteLog('FeedForward', []);
+  FLog.Add('FeedForward');
+
   for i := 0 to FTopology.Input - 1 do
   begin
     FNeuronsInput[i] := ASample^[i];
-    //WriteLog('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
+    FLog.AddFmt('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
   end;
-  //WriteLog('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
+  FLog.Add('');
 
   Compute(@FNeuronsInput, @FNeuronsHidden, @FWeightsInputHidden, FTopology.Input + 1, FTopology.Hidden);
+
+  for i := 0 to FTopology.Hidden - 1 do
+    FLog.AddFmt('FNeuronsHidden[%d] = %.6f', [i, FNeuronsHidden[i]]);
+  FLog.Add('');
+
   (*
   for h := 0 to FTopology.Hidden - 1 do
   begin
@@ -73,6 +79,11 @@ begin
   *)
 
   Compute(@FNeuronsHidden, @FNeuronsOutput, @FWeightsHiddenOutput, FTopology.Hidden + 1, FTopology.Output);
+
+  for i := 0 to FTopology.Output - 1 do
+    FLog.AddFmt('FNeuronsOutput[%d] = %.6f', [i, FNeuronsOutput[i]]);
+  FLog.Add('');
+
   (*
   for o := 0 to FTopology.Output - 1 do
   begin
@@ -91,14 +102,15 @@ var
   i, h, o, iSample: Word;
   Sum: Single;
 begin
-  //WriteLog('BackPropagation', []);
+  FLog.Add('BackPropagation');
 
   for o := 0 to FTopology.Output - 1 do
   begin
     iSample := FTopology.Input + o;
     FDeltaOutput[o] := FNeuronsOutput[o] * (1 - FNeuronsOutput[o]) * (ASample^[iSample] - FNeuronsOutput[o]);
-    //WriteLog('FDeltaOutput[%d]=%.6f', [o, FDeltaOutput[o]]);
+    FLog.AddFmt('FDeltaOutput[%d]=%.6f', [o, FDeltaOutput[o]]);
   end;
+  FLog.Add('');
 
   for h := 0 to FTopology.Hidden { +1 BIAS } do
   begin
@@ -107,26 +119,29 @@ begin
       Sum := Sum + (FDeltaOutput[o] * FWeightsHiddenOutput[h][o]);
 
     FDeltaHidden[h] := FNeuronsHidden[h] * (1 - FNeuronsHidden[h]) * Sum;
-    //WriteLog('FDeltaHidden[%d]=%.6f', [h, FDeltaHidden[h]]);
+    FLog.AddFmt('FDeltaHidden[%d]=%.6f', [h, FDeltaHidden[h]]);
   end;
+  FLog.Add('');
 
   for h := 0 to FTopology.Hidden { +1 BIAS } do
   begin
     for o := 0 to FTopology.Output - 1 do
     begin
       FWeightsHiddenOutput[h][o] := FWeightsHiddenOutput[h][o] + FEta * FDeltaOutput[o] * FNeuronsHidden[h];
-      //WriteLog('FWeightsHiddenOutput[%d][%d]=%.6f', [h, o, FWeightsHiddenOutput[h][o]]);
+      FLog.AddFmt('FWeightsHiddenOutput[%d][%d]=%.6f', [h, o, FWeightsHiddenOutput[h][o]]);
     end;
   end;
+  FLog.Add('');
 
   for i := 0 to FTopology.Input { +1 BIAS } do
   begin
     for h := 0 to FTopology.Hidden - 1 do
     begin
       FWeightsInputHidden[i][h] := FWeightsInputHidden[i][h] + FEta * FDeltaHidden[h] * FNeuronsInput[i];
-      //WriteLog('FWeightsInputHidden[%d][%d]=%.6f', [i, h, FWeightsInputHidden[i][h]]);
+      FLog.AddFmt('FWeightsInputHidden[%d][%d]=%.6f', [i, h, FWeightsInputHidden[i][h]]);
     end;
   end;
+  FLog.Add('');
 end;
 
 procedure TNeuralNetwork.ReportResults(ASample: PSample);

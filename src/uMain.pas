@@ -196,16 +196,18 @@ begin
   Topology.Hidden := seHidden.Value;
   Topology.Output := seOutput.Value;
 
-  mmoLog.Lines.Clear;
+  //mmoLog.Lines.Clear;
 
-  Epochs := seEpochs.Value;
+  //Epochs := seEpochs.Value;
+  Epochs := 1;
   try
     Samples := TSamplesSet.Create;
     Samples.LoadCSVFile(lbledtData.Text, Topology.Input, Topology.Output, DELIMITER);
 
     ANeuralNetwork.Log := mmoLog.Lines;
     ANeuralNetwork.Eta := StrToFloat(edtEta.Text);
-    ANeuralNetwork.DefineRandomWeights;
+    ANeuralNetwork.LoadWeights('C:\Temp\weights_20160520-092204.csv');
+    //ANeuralNetwork.DefineRandomWeights;
 
     //mmoLog.Lines.BeginUpdate;
 

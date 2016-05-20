@@ -83,6 +83,7 @@ end;
 procedure TNeuralNetworkBase.DefineRandomWeights;
 var
   i, j, k: Word;
+  Filename: string;
 begin
   FLog.Add('DefineRandomWeights');
   Randomize;
@@ -112,6 +113,9 @@ begin
       FLog.AddFmt('FWHiddenOutput[%d]=%.6f', [k, FWHiddenOutput[k]]);
     end;
   end;
+
+  Filename := 'C:\Temp\weights_' + FormatDateTime('yyyymmdd-hhnnss', Now) + '.csv';
+  SaveWeights(Filename);
 end;
 
 destructor TNeuralNetworkBase.Destroy;
