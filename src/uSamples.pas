@@ -2,6 +2,9 @@ unit uSamples;
 
 interface
 
+uses
+  uTypes;
+
 type
   PSample = ^TSample;
   TSample = array of Single;
@@ -15,7 +18,7 @@ type
     FSamples: TSamples;
     FSamplesCount: Cardinal;
   public
-    FRaw: array of Single;
+    FRaw: TVectorSingle;
 
     constructor Create;
     destructor Destroy; override;
@@ -80,7 +83,7 @@ begin
     FSamplesCount := CSVFile.Count;
 
     SetLength(FSamples, FSamplesCount, FSampleSize);
-    SetLength(FRaw, FSamplesCount * FSampleSize);
+    SetLength(FRaw, FSamplesCount * (FSampleSize + 1)); // +1 for BIAS
 
     i := 0;
     for Row := 0 to FSamplesCount - 1 do
@@ -94,6 +97,8 @@ begin
         FRaw[i] := FSamples[Row][Col];
         Inc(i);
       end;
+      FRaw[i] := 1;
+      Inc(i);
     end;
   finally
     FreeAndNil(Line);

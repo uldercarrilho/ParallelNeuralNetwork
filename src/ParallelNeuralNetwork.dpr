@@ -9,7 +9,9 @@ uses
   uNeuralNetwork in 'uNeuralNetwork.pas',
   uNeuralNetworkOpenCL in 'uNeuralNetworkOpenCL.pas',
   uNeuralNetworkBase in 'uNeuralNetworkBase.pas',
-  uHelpers in 'uHelpers.pas';
+  uHelpers in 'uHelpers.pas',
+  uTypes in 'uTypes.pas',
+  uNeuralNetworkOpenCLTests in 'uNeuralNetworkOpenCLTests.pas';
 
 {$R *.res}
 

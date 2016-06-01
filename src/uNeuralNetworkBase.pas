@@ -31,11 +31,13 @@ type
     FDeltaOutput: array of Single;
     FDeltaHidden: array of Single;
 
-    FEta: Single;
     FLog: TStrings;
+    FEta: Single;
+    FSamplesSet: TSamplesSet;
+
     function GetRandomWeight: Single;
-    procedure FeedForward(ASample: PSample); virtual; abstract;
-    procedure BackPropagation(ASample: PSample); virtual; abstract;
+    procedure FeedForward(iSample: Cardinal); virtual; abstract;
+    procedure BackPropagation(iSample: Cardinal); virtual; abstract;
   public
     constructor Create(ATopology: TTopology); virtual;
     destructor Destroy; override;
@@ -43,10 +45,11 @@ type
     procedure DefineRandomWeights;
     procedure SaveWeights(const AFileName: string);
     procedure LoadWeights(const AFileName: string);
-    procedure Learn(ASamplesSet: TSamplesSet);
+    procedure Learn;
 
     property Eta: Single read FEta write FEta;
     property Log: TStrings read FLog write FLog;
+    property SamplesSet: TSamplesSet read FSamplesSet write FSamplesSet;
   end;
 
 implementation
@@ -80,44 +83,6 @@ begin
   FLog := nil;
 end;
 
-procedure TNeuralNetworkBase.DefineRandomWeights;
-var
-  i, j, k: Word;
-  Filename: string;
-begin
-  FLog.Add('DefineRandomWeights');
-  Randomize;
-
-  for i := 0 to FTopology.Input {+1 BIAS} do
-  begin
-    for j := 0 to FTopology.Hidden - 1 do
-    begin
-      FWeightsInputHidden[i][j] := GetRandomWeight;
-      FLog.AddFmt('FWeightsInputHidden[%d][%d]=%.6f', [i, j, FWeightsInputHidden[i][j]]);
-
-      k := i * FTopology.Hidden + j;
-      FWInputHidden[k] := FWeightsInputHidden[i][j];
-      FLog.AddFmt('FWInputHidden[%d]=%.6f', [k, FWInputHidden[k]]);
-    end;
-  end;
-
-  for i := 0 to FTopology.Hidden {+1 BIAS} do
-  begin
-    for j := 0 to FTopology.Output - 1 do
-    begin
-      FWeightsHiddenOutput[i][j] := GetRandomWeight;
-      FLog.AddFmt('FWeightsHiddenOutput[%d][%d]=%.6f', [i, j, FWeightsHiddenOutput[i][j]]);
-
-      k := i * FTopology.Output + j;
-      FWHiddenOutput[k] := FWeightsHiddenOutput[i][j];
-      FLog.AddFmt('FWHiddenOutput[%d]=%.6f', [k, FWHiddenOutput[k]]);
-    end;
-  end;
-
-  Filename := 'C:\Temp\weights_' + FormatDateTime('yyyymmdd-hhnnss', Now) + '.csv';
-  SaveWeights(Filename);
-end;
-
 destructor TNeuralNetworkBase.Destroy;
 begin
   SetLength(FNeuronsInput, 0);
@@ -126,6 +91,9 @@ begin
 
   SetLength(FWeightsInputHidden, 0, 0);
   SetLength(FWeightsHiddenOutput, 0, 0);
+
+  SetLength(FWInputHidden, 0);
+  SetLength(FWHiddenOutput, 0);
 
   SetLength(FDeltaOutput, 0);
   SetLength(FDeltaHidden, 0);
@@ -139,30 +107,70 @@ begin
   Result := RandomRange(-1000, 1000) / 1000;
 end;
 
-procedure TNeuralNetworkBase.Learn(ASamplesSet: TSamplesSet);
+procedure TNeuralNetworkBase.DefineRandomWeights;
+var
+  i, j, k: Word;
+  Filename: string;
+begin
+  //FLog.Add('DefineRandomWeights');
+  Randomize;
+
+  for i := 0 to FTopology.Input {+1 BIAS} do
+  begin
+    for j := 0 to FTopology.Hidden - 1 do
+    begin
+      FWeightsInputHidden[i][j] := GetRandomWeight;
+      //FLog.AddFmt('FWeightsInputHidden[%d][%d]=%.6f', [i, j, FWeightsInputHidden[i][j]]);
+
+      k := i * FTopology.Hidden + j;
+      FWInputHidden[k] := FWeightsInputHidden[i][j];
+      //FLog.AddFmt('FWInputHidden[%d]=%.6f', [k, FWInputHidden[k]]);
+    end;
+  end;
+
+  for i := 0 to FTopology.Hidden {+1 BIAS} do
+  begin
+    for j := 0 to FTopology.Output - 1 do
+    begin
+      FWeightsHiddenOutput[i][j] := GetRandomWeight;
+      //FLog.AddFmt('FWeightsHiddenOutput[%d][%d]=%.6f', [i, j, FWeightsHiddenOutput[i][j]]);
+
+      k := i * FTopology.Output + j;
+      FWHiddenOutput[k] := FWeightsHiddenOutput[i][j];
+      //FLog.AddFmt('FWHiddenOutput[%d]=%.6f', [k, FWHiddenOutput[k]]);
+    end;
+  end;
+
+  Filename := 'C:\Temp\weights_' + FormatDateTime('yyyymmdd-hhnnss', Now) + '.csv';
+  SaveWeights(Filename);
+end;
+
+procedure TNeuralNetworkBase.Learn;
 var
   Row: Integer;
   Sample: PSample;
   Error: Single;
 begin
   Error := 0;
-  for Row := 0 to ASamplesSet.SamplesCount - 1 do
+  for Row := 0 to FSamplesSet.SamplesCount - 1 do
   begin
-    Sample := @ASamplesSet.Samples[Row];
-    FeedForward(Sample);
-    BackPropagation(Sample);
+    Sample := @FSamplesSet.Samples[Row];
+    FeedForward(Row);
+    BackPropagation(Row);
 
     // TODO : calcular o erro usando o 1/2 * Soma(T - O)^2
 
     //ReportResults(Sample);
     Error := Error + Abs((Sample^[FTopology.Input]) - Abs(FNeuronsOutput[0]));
 
+    //Error := Error + Power(Sample^[FTopology.Input] - FNeuronsOutput[0], 2);
+
 //    if Row < 10 then
 //      FLog.Strings[Row] := FLog.Strings[Row] + ';' + FloatToStr(Sample^[FTopology.Input] - FNeuronsOutput[0]);
 
     //FLog.Add('---------- ---------- ----------');
   end;
-  Error := Error / ASamplesSet.SamplesCount;
+  Error := Error / FSamplesSet.SamplesCount;
   FLog.Add(FloatToStr(Error));
 end;
 

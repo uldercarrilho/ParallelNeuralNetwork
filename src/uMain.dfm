@@ -69,7 +69,7 @@ object Form1: TForm1
     MaxValue = 0
     MinValue = 0
     TabOrder = 3
-    Value = 2000
+    Value = 1000
   end
   object edtEta: TEdit
     Left = 208
@@ -77,7 +77,7 @@ object Form1: TForm1
     Width = 121
     Height = 21
     TabOrder = 4
-    Text = '0,35'
+    Text = '0,15'
   end
   object grpTopology: TGroupBox
     Left = 8
@@ -115,7 +115,7 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 0
-      Value = 2
+      Value = 11
     end
     object seHidden: TSpinEdit
       Left = 67
@@ -125,7 +125,7 @@ object Form1: TForm1
       MaxValue = 10000
       MinValue = 1
       TabOrder = 1
-      Value = 3
+      Value = 20
     end
     object seOutput: TSpinEdit
       Left = 123
@@ -148,8 +148,8 @@ object Form1: TForm1
     EditLabel.Caption = 'Data file'
     TabOrder = 6
     Text = 
-      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\XOR\sam' +
-      'ples-to-learn.csv'
+      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Wine\wi' +
+      'ne-red-normal.csv'
   end
   object lbledtWeights: TLabeledEdit
     Left = 8
@@ -161,8 +161,8 @@ object Form1: TForm1
     EditLabel.Caption = 'Weights file'
     TabOrder = 7
     Text = 
-      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\XOR\wei' +
-      'ghts.csv'
+      'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Wine\wi' +
+      'ne-red-weights.csv'
   end
   object btnData: TButton
     Left = 480

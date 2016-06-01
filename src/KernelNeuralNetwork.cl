@@ -2,6 +2,7 @@ __kernel void multiply(
     __global float* inputs,
     __global float* weights,
     __global float* results,
+    uint inputOffset,
     uint inputSize,
     uint outputSize)
 {
@@ -15,7 +16,8 @@ __kernel void multiply(
         return;
 
     uint id = inputId * outputSize + outputId;
-    results[id] = inputs[inputId] * weights[id];
+
+    results[id] = inputs[inputOffset + inputId] * weights[id];
 }
 
 __kernel void sigmoide(
@@ -43,13 +45,17 @@ __kernel void calculateDeltaOutput(
     __global float* outputs,
     __global float* samples,
     __global float* results,
-    uint outputSize)
+    uint outputSize,
+    uint samplesOffset)
 {
     uint outputId = get_global_id(0);
     if (outputId >= outputSize)
         return;
 
-    results[outputId] = outputs[outputId] * (1 - outputs[outputId]) * (samples[outputId] - outputs[outputId]);
+    results[outputId] = 
+        outputs[outputId] * 
+        (1 - outputs[outputId]) * 
+        (samples[samplesOffset + outputId] - outputs[outputId]);
 }
 
 __kernel void calculateDeltaHidden(
@@ -79,6 +85,7 @@ __kernel void updateWeights(
     __global float* weights,
     __global float* neurons,
     __global float* delta,
+    uint neuronOffset,
     uint neuronSize,
     uint deltaSize,
     float eta)
@@ -93,5 +100,31 @@ __kernel void updateWeights(
         return;
 
     uint id = neuronId * deltaSize + deltaId;
-    weights[id] += eta * delta[deltaId] * neurons[neuronId];
+    weights[id] += eta * delta[deltaId] * neurons[neuronOffset + neuronId];
+}
+
+__kernel void params(
+    __global float* result,
+    __global float* param1,
+    __global float* param2,
+    __global float* param3,
+    __global float* param4,
+    __global float* param5,
+    __global float* param6,
+    __global float* param7,
+    __global float* param8,
+    __global float* param9)
+{
+    uint id = get_global_id(0);
+
+    result[id] = 
+        param1[id] + 
+        param2[id] + 
+        param3[id] + 
+        param4[id] + 
+        param5[id] + 
+        param6[id] + 
+        param7[id] + 
+        param8[id] + 
+        param9[id];
 }

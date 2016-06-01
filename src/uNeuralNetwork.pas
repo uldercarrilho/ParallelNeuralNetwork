@@ -14,11 +14,11 @@ type
 
   TNeuralNetwork = class(TNeuralNetworkBase)
   private
-    procedure ReportResults(ASample: PSample);
+    procedure ReportResults(iSample: Cardinal);
     procedure Compute(ANeuronsIN, ANeuronsOUT: PVector1D; AWeights: PVector2D; const ASizeIN, ASizeOUT: Word);
   protected
-    procedure FeedForward(ASample: PSample); override;
-    procedure BackPropagation(ASample: PSample); override;
+    procedure FeedForward(iSample: Cardinal); override;
+    procedure BackPropagation(iSample: Cardinal); override;
   public
     procedure Tests(ASamplesSet: TSamplesSet);
   end;
@@ -26,44 +26,51 @@ type
 implementation
 
 uses
-  Math, IdGlobal, Winapi.Windows, uHelpers;
+  Math, IdGlobal, Winapi.Windows, uHelpers, System.Threading;
 
 { TNeuralNetwork }
 
 procedure TNeuralNetwork.Compute(ANeuronsIN, ANeuronsOUT: PVector1D; AWeights: PVector2D; const ASizeIN, ASizeOUT: Word);
 var
   i, o: Word;
-  Sum: Single;
+  Sum: Extended;
 begin
+  //TParallel.For(0, ASizeOUT - 1, procedure(o: Integer)
   for o := 0 to ASizeOUT - 1 do
+  //var i: Word;
   begin
     Sum := 0;
     for i := 0 to ASizeIN - 1 do
       Sum := Sum + ANeuronsIN^[i] * AWeights^[i][o];
 
-    ANeuronsOUT^[o] := 1 / (1 + Exp(-Sum));
+    try
+      ANeuronsOUT^[o] := 1 / (1 + Exp(-Sum));
+    except
+      ANeuronsOUT^[o] := 0;
+    end;
   end;
 end;
 
-procedure TNeuralNetwork.FeedForward(ASample: PSample);
+procedure TNeuralNetwork.FeedForward(iSample: Cardinal);
 var
   i: Integer;
 //  Sum: Single;
 begin
-  FLog.Add('FeedForward');
+  ////FLog.Add('FeedForward');
 
+  //TParallel.For(0, FTopology.Input - 1, procedure(i: Integer)
   for i := 0 to FTopology.Input - 1 do
   begin
-    FNeuronsInput[i] := ASample^[i];
-    FLog.AddFmt('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
+    FNeuronsInput[i] := FSamplesSet.Samples[iSample][i];
+    //FLog.AddFmt('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
   end;
-  FLog.Add('');
+  //FLog.Add('');
 
   Compute(@FNeuronsInput, @FNeuronsHidden, @FWeightsInputHidden, FTopology.Input + 1, FTopology.Hidden);
 
-  for i := 0 to FTopology.Hidden - 1 do
-    FLog.AddFmt('FNeuronsHidden[%d] = %.6f', [i, FNeuronsHidden[i]]);
-  FLog.Add('');
+  //for i := 0 to FTopology.Hidden - 1 do
+    //FLog.AddFmt('FNeuronsHidden[%d] = %.6f', [i, FNeuronsHidden[i]]);
+  //FLog.Add('');
 
   (*
   for h := 0 to FTopology.Hidden - 1 do
@@ -80,9 +87,9 @@ begin
 
   Compute(@FNeuronsHidden, @FNeuronsOutput, @FWeightsHiddenOutput, FTopology.Hidden + 1, FTopology.Output);
 
-  for i := 0 to FTopology.Output - 1 do
-    FLog.AddFmt('FNeuronsOutput[%d] = %.6f', [i, FNeuronsOutput[i]]);
-  FLog.Add('');
+  //for i := 0 to FTopology.Output - 1 do
+    //FLog.AddFmt('FNeuronsOutput[%d] = %.6f', [i, FNeuronsOutput[i]]);
+  //FLog.Add('');
 
   (*
   for o := 0 to FTopology.Output - 1 do
@@ -97,84 +104,91 @@ begin
   *)
 end;
 
-procedure TNeuralNetwork.BackPropagation(ASample: PSample);
+procedure TNeuralNetwork.BackPropagation(iSample: Cardinal);
 var
-  i, h, o, iSample: Word;
+  i, h, o, iOutput: Word;
   Sum: Single;
 begin
-  FLog.Add('BackPropagation');
+  //FLog.Add('BackPropagation');
 
+  //TParallel.For(0, FTopology.Output - 1, procedure(o: Integer)
   for o := 0 to FTopology.Output - 1 do
   begin
-    iSample := FTopology.Input + o;
-    FDeltaOutput[o] := FNeuronsOutput[o] * (1 - FNeuronsOutput[o]) * (ASample^[iSample] - FNeuronsOutput[o]);
-    FLog.AddFmt('FDeltaOutput[%d]=%.6f', [o, FDeltaOutput[o]]);
+    iOutput := FTopology.Input + o;
+    FDeltaOutput[o] := FNeuronsOutput[o] * (1 - FNeuronsOutput[o]) * (FSamplesSet.Samples[iSample][iOutput] - FNeuronsOutput[o]);
+    //FLog.AddFmt('FDeltaOutput[%d]=%.6f', [o, FDeltaOutput[o]]);
   end;
-  FLog.Add('');
+  //FLog.Add('');
 
+  //TParallel.For(0, FTopology.Hidden, procedure(h: Integer)
   for h := 0 to FTopology.Hidden { +1 BIAS } do
+  //var o: Integer;
   begin
     Sum := 0;
     for o := 0 to FTopology.Output - 1 do
       Sum := Sum + (FDeltaOutput[o] * FWeightsHiddenOutput[h][o]);
 
     FDeltaHidden[h] := FNeuronsHidden[h] * (1 - FNeuronsHidden[h]) * Sum;
-    FLog.AddFmt('FDeltaHidden[%d]=%.6f', [h, FDeltaHidden[h]]);
+    //FLog.AddFmt('FDeltaHidden[%d]=%.6f', [h, FDeltaHidden[h]]);
   end;
-  FLog.Add('');
+  //FLog.Add('');
 
+  //TParallel.For(0, FTopology.Hidden, procedure(h: Integer)
   for h := 0 to FTopology.Hidden { +1 BIAS } do
+  //var o: Integer;
   begin
     for o := 0 to FTopology.Output - 1 do
     begin
       FWeightsHiddenOutput[h][o] := FWeightsHiddenOutput[h][o] + FEta * FDeltaOutput[o] * FNeuronsHidden[h];
-      FLog.AddFmt('FWeightsHiddenOutput[%d][%d]=%.6f', [h, o, FWeightsHiddenOutput[h][o]]);
+      //FLog.AddFmt('FWeightsHiddenOutput[%d][%d]=%.6f', [h, o, FWeightsHiddenOutput[h][o]]);
     end;
   end;
-  FLog.Add('');
+  //FLog.Add('');
 
+  //TParallel.For(0, FTopology.Input, procedure(i: Integer)
   for i := 0 to FTopology.Input { +1 BIAS } do
+  //var h: Integer;
   begin
     for h := 0 to FTopology.Hidden - 1 do
     begin
       FWeightsInputHidden[i][h] := FWeightsInputHidden[i][h] + FEta * FDeltaHidden[h] * FNeuronsInput[i];
-      FLog.AddFmt('FWeightsInputHidden[%d][%d]=%.6f', [i, h, FWeightsInputHidden[i][h]]);
+      //FLog.AddFmt('FWeightsInputHidden[%d][%d]=%.6f', [i, h, FWeightsInputHidden[i][h]]);
     end;
   end;
-  FLog.Add('');
+  //FLog.Add('');
 end;
 
-procedure TNeuralNetwork.ReportResults(ASample: PSample);
+procedure TNeuralNetwork.ReportResults(iSample: Cardinal);
 var
   Info: string;
-  i, iSample: Integer;
+  i, iOutput: Integer;
 begin
   Info := '';
   for i := 0 to FTopology.Input + FTopology.Output - 1 do
-    Info := Info + FloatToStr(ASample^[i]) + ';';
+    Info := Info + FloatToStr(FSamplesSet.Samples[iSample][i]) + ';';
 
   for i := 0 to FTopology.Output - 1 do
   begin
-    iSample := FTopology.Input + i;
+    iOutput := FTopology.Input + i;
     Info := Info + ';' + FloatToStr(FNeuronsOutput[i]);
-    Info := Info + ';' + FloatToStr(ASample^[iSample] - FNeuronsOutput[i]);
+    Info := Info + ';' + FloatToStr(FSamplesSet.Samples[iSample][iOutput] - FNeuronsOutput[i]);
   end;
-  FLog.Add(Info);
+  //FLog.Add(Info);
 end;
 
 procedure TNeuralNetwork.Tests(ASamplesSet: TSamplesSet);
 var
   Row: Integer;
-  Sample: PSample;
+  //Sample: PSample;
   //Error: Single;
 begin
   //Error := 0;
   for Row := 0 to ASamplesSet.SamplesCount - 1 do
   begin
-    Sample := @ASamplesSet.Samples[Row];
-    FeedForward(Sample);
+    //Sample := @ASamplesSet.Samples[Row];
+    FeedForward(Row);
 
-    ReportResults(Sample);
+    ReportResults(Row);
     //Error := Error + Abs((Sample^[FTopology.Input]) - Abs(FNeuronsOutput[0]));
   end;
   //Error := Error / ASamplesSet.SamplesCount;

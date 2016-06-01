@@ -3,11 +3,11 @@ unit uNeuralNetworkOpenCL;
 interface
 
 uses
-  Mitov.OpenCL, System.Classes, uNeuralNetworkBase, uSamples;
+  Mitov.OpenCL, System.Classes, uNeuralNetworkBase, uSamples, uTypes;
 
 type
   TNeuralNetworkOpenCL = class(TNeuralNetworkBase)
-  private
+  protected
     FContext: IOCLContext;
     FCommandQueue: IOCLCommandQueue;
     FKernelMultiply: IOCLKernel;
@@ -15,38 +15,42 @@ type
     FKernelDeltaOutput: IOCLKernel;
     FKernelDeltaHidden: IOCLKernel;
     FKernelUpdateWeights: IOCLKernel;
+    FKernelParams: IOCLKernel;
 
-    FBufferNeuronsInput: IOCLBuffer;
+    FBufferSamples: IOCLBuffer;
+
+    //FBufferNeuronsInput: IOCLBuffer;
     FBufferNeuronsHidden: IOCLBuffer;
     FBufferNeuronsOutput: IOCLBuffer;
 
     FBufferWInputHidden: IOCLBuffer;
     FBufferWHiddenOutput: IOCLBuffer;
 
+    FBufferSumInputHidden: IOCLBuffer;
+    FBufferSumHiddenOutput: IOCLBuffer;
+
     FBufferDeltaOutput: IOCLBuffer;
     FBufferDeltaHidden: IOCLBuffer;
-
 
     FSumInputHidden: array of Single;
     FSumHiddenOutput: array of Single;
 
-    FBufferSumInputHidden: IOCLBuffer;
-    FBufferSumHiddenOutput: IOCLBuffer;
-
-    FSampleOutput: array of Single;
-    FBufferSampleOutput: IOCLBuffer;
+    FSamples: TVectorSingle;
+    FSamplesCount: Cardinal;
 
     function GetOpenCLSource(const AResourceName: string): string;
-  protected
-    procedure FeedForward(ASample: PSample); override;
-    procedure BackPropagation(ASample: PSample); override;
+    procedure FeedForward(iSample: Cardinal); override;
+    procedure BackPropagation(iSample: Cardinal); override;
+    procedure CreateBuffers;
   public
     constructor Create(ATopology: TTopology); override;
+    destructor Destroy; override;
+
     procedure BuildKernel;
-    procedure Multiply;
-    procedure DeltaOutput;
-    procedure DeltaHidden;
-    procedure UpdateWeights;
+    procedure WriteBufferToGPU;
+
+    procedure SetSamples(ASamples: TVectorSingle; ACount: Cardinal);
+    procedure Learn(AEpochs: Cardinal); overload;
   end;
 
 implementation
@@ -56,397 +60,22 @@ uses
 
 { TNeuralNetworkOpenCL }
 
-
-procedure TNeuralNetworkOpenCL.DeltaHidden;
-const
-  HIDDEN_SIZE = 3;
-  OUTPUT_SIZE = 2;
-  DELTAO_SIZE = OUTPUT_SIZE;
-  WEIGHT_SIZE = HIDDEN_SIZE * OUTPUT_SIZE;
-  RESULT_SIZE = HIDDEN_SIZE;
-var
-  Hiddens: array[0..HIDDEN_SIZE - 1] of Single;
-  DeltaOu: array[0..DELTAO_SIZE - 1] of Single;
-  Weights: array[0..WEIGHT_SIZE - 1] of Single;
-  Results: array[0..RESULT_SIZE - 1] of Single;
-
-  BufferHiddens: IOCLBuffer;
-  BufferDeltaOu: IOCLBuffer;
-  BufferWeights: IOCLBuffer;
-  BufferResults: IOCLBuffer;
-
-  i: Integer;
+constructor TNeuralNetworkOpenCL.Create(ATopology: TTopology);
 begin
-  Hiddens[0] := 0.2;
-  Hiddens[1] := 0.3;
-  Hiddens[2] := 0.4;
+  inherited;
 
-  DeltaOu[0] := -0.032;
-  DeltaOu[1] := +0.147;
+  SetLength(FSumInputHidden, (FTopology.Input + 1) * FTopology.Hidden);
+  SetLength(FSumHiddenOutput, (FTopology.Hidden + 1) * FTopology.Output);
 
-  Weights[0] := 1;
-  Weights[1] := 2;
-  Weights[2] := 3;
-  Weights[3] := 4;
-  Weights[4] := 5;
-  Weights[5] := 6;
-
-  Results[0] := 0;
-  Results[1] := 0;
-  Results[2] := 0;
-
-  BufferHiddens := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], HIDDEN_SIZE * SizeOf(Single), @Hiddens[0]);
-  BufferDeltaOu := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], DELTAO_SIZE * SizeOf(Single), @DeltaOu[0]);
-  BufferWeights := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], WEIGHT_SIZE * SizeOf(Single), @Weights[0]);
-  BufferResults := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], RESULT_SIZE * SizeOf(Single), @Results[0]);
-
-  FKernelDeltaHidden.Arguments[0].Access.SetBuffer(BufferHiddens);
-  FKernelDeltaHidden.Arguments[1].Access.SetBuffer(BufferDeltaOu);
-  FKernelDeltaHidden.Arguments[2].Access.SetBuffer(BufferWeights);
-  FKernelDeltaHidden.Arguments[3].Access.SetBuffer(BufferResults);
-  FKernelDeltaHidden.Arguments[4].Access.SetValue<Cardinal>(HIDDEN_SIZE);
-  FKernelDeltaHidden.Arguments[5].Access.SetValue<Cardinal>(OUTPUT_SIZE);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelDeltaHidden, TOCLGlobalDimensions.Create([HIDDEN_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferResults, True, @Results[0]);
-
-  for i := 0 to RESULT_SIZE - 1 do
-    FLog.Add(Format('DeltaHidden[%d] = %.6f', [i, Results[i]]));
-
-  FLog.Add('');
+  BuildKernel;
 end;
 
-procedure TNeuralNetworkOpenCL.DeltaOutput;
-const
-  OUTPUT_SIZE = 2;
-  SAMPLE_SIZE = OUTPUT_SIZE;
-  RESULT_SIZE = OUTPUT_SIZE;
-var
-  Outputs: array[0..OUTPUT_SIZE - 1] of Single;
-  Samples: array[0..SAMPLE_SIZE - 1] of Single;
-  Results: array[0..RESULT_SIZE - 1] of Single;
-
-  BufferOutputs: IOCLBuffer;
-  BufferSamples: IOCLBuffer;
-  BufferResults: IOCLBuffer;
-
-  i: Integer;
+destructor TNeuralNetworkOpenCL.Destroy;
 begin
-  Outputs[0] := 0.2;
-  Outputs[1] := 0.3;
+  SetLength(FSumInputHidden, 0);
+  SetLength(FSumHiddenOutput, 0);
 
-  Samples[0] := 0;
-  Samples[1] := 1;
-
-  Results[0] := 0;
-  Results[1] := 0;
-
-  BufferOutputs := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], OUTPUT_SIZE * SizeOf(Single), @Outputs[0]);
-  BufferSamples := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], SAMPLE_SIZE * SizeOf(Single), @Samples[0]);
-  BufferResults := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], RESULT_SIZE * SizeOf(Single), @Results[0]);
-
-  FKernelDeltaOutput.Arguments[0].Access.SetBuffer(BufferOutputs);
-  FKernelDeltaOutput.Arguments[1].Access.SetBuffer(BufferSamples);
-  FKernelDeltaOutput.Arguments[2].Access.SetBuffer(BufferResults);
-  FKernelDeltaOutput.Arguments[3].Access.SetValue<Cardinal>(OUTPUT_SIZE);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelDeltaOutput, TOCLGlobalDimensions.Create([OUTPUT_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferResults, True, @Results[0]);
-
-  for i := 0 to RESULT_SIZE - 1 do
-    FLog.Add(Format('DeltaOutput[%d] = %.6f', [i, Results[i]]));
-
-  FLog.Add('');
-end;
-
-procedure TNeuralNetworkOpenCL.FeedForward(ASample: PSample);
-var
-  i: Integer;
-begin
-  FLog.Add('FeedForward');
-
-  for i := 0 to FTopology.Input - 1 do
-  begin
-    FNeuronsInput[i] := ASample^[i];
-    FLog.AddFmt('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
-  end;
-  FLog.Add('');
-  FCommandQueue.EnqueueWriteBuffer(FBufferNeuronsInput, True, @FNeuronsInput[0]);
-
-  {$REGION 'Calcular ativação INPUT --> HIDDEN'}
-  FKernelMultiply.Arguments[0].Access.SetBuffer(FBufferNeuronsInput);
-  FKernelMultiply.Arguments[1].Access.SetBuffer(FBufferWInputHidden);
-  FKernelMultiply.Arguments[2].Access.SetBuffer(FBufferSumInputHidden);
-  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
-  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([FTopology.Input + 1, FTopology.Hidden]));
-  FCommandQueue.EnqueueReadBuffer(FBufferSumInputHidden, True, @FSumInputHidden[0]);
-
-//  for i := 0 to (FTopology.Input + 1) * FTopology.Hidden - 1 do
-//    FLog.Add(Format('FSumInputHidden[%d] = %.6f', [i, FSumInputHidden[i]]));
-//
-//  FLog.Add('');
-
-  FKernelSigmoide.Arguments[0].Access.SetBuffer(FBufferSumInputHidden);
-  FKernelSigmoide.Arguments[1].Access.SetBuffer(FBufferNeuronsHidden);
-  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
-  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(FTopology.Hidden);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([FTopology.Hidden]));
-  FCommandQueue.EnqueueReadBuffer(FBufferNeuronsHidden, True, @FNeuronsHidden[0]);
-
-  for i := 0 to FTopology.Hidden - 1 do
-    FLog.Add(Format('FNeuronsHidden[%d] = %.6f', [i, FNeuronsHidden[i]]));
-
-  FLog.Add('');
-  {$ENDREGION}
-
-  {$REGION 'Calcular ativação HIDDEN --> OUTPUT'}
-  FKernelMultiply.Arguments[0].Access.SetBuffer(FBufferNeuronsHidden);
-  FKernelMultiply.Arguments[1].Access.SetBuffer(FBufferWHiddenOutput);
-  FKernelMultiply.Arguments[2].Access.SetBuffer(FBufferSumHiddenOutput);
-  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
-  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(FTopology.Output);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([FTopology.Hidden + 1, FTopology.Output]));
-  FCommandQueue.EnqueueReadBuffer(FBufferSumHiddenOutput, True, @FSumHiddenOutput[0]);
-
-//  for i := 0 to (FTopology.Hidden + 1) * FTopology.Output - 1 do
-//    FLog.Add(Format('FSumHiddenOutput[%d] = %.6f', [i, FSumHiddenOutput[i]]));
-//
-//  FLog.Add('');
-
-  FKernelSigmoide.Arguments[0].Access.SetBuffer(FBufferSumHiddenOutput);
-  FKernelSigmoide.Arguments[1].Access.SetBuffer(FBufferNeuronsOutput);
-  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
-  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(FTopology.Output);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([FTopology.Output]));
-  FCommandQueue.EnqueueReadBuffer(FBufferNeuronsOutput, True, @FNeuronsOutput[0]);
-
-  for i := 0 to FTopology.Output - 1 do
-    FLog.Add(Format('FNeuronsOutput[%d] = %.6f', [i, FNeuronsOutput[i]]));
-
-  FLog.Add('');
-  {$ENDREGION}
-end;
-
-function TNeuralNetworkOpenCL.GetOpenCLSource(const AResourceName: string): string;
-var
-  ResStream: TResourceStream;
-  slResource: TStringList;
-begin
-  ResStream := TResourceStream.Create(hInstance, AResourceName, RT_RCDATA);
-  slResource := TStringList.Create;
-  try
-    slResource.LoadFromStream(ResStream);
-    Result := slResource.Text;
-  finally
-    ResStream.Free;
-    slResource.Free;
-  end;
-end;
-
-procedure TNeuralNetworkOpenCL.Multiply;
-const
-  INPUT_SIZE = 3;
-  OUTPUT_SIZE = 2;
-  WEIGHT_SIZE = INPUT_SIZE * OUTPUT_SIZE;
-  RESULT_SIZE = WEIGHT_SIZE;
-var
-  Inputs: array[0..INPUT_SIZE - 1] of Single;
-  Outputs: array[0..OUTPUT_SIZE - 1] of Single;
-  Weights: array[0..WEIGHT_SIZE - 1] of Single;
-  Results: array[0..RESULT_SIZE - 1] of Single;
-
-  BufferInputs: IOCLBuffer;
-  BufferOutputs: IOCLBuffer;
-  BufferWeights: IOCLBuffer;
-  BufferResults: IOCLBuffer;
-
-  i: Integer;
-begin
-  Inputs[0] := 2;
-  Inputs[1] := 3;
-  Inputs[2] := 5;
-
-  Outputs[0] := 0;
-  Outputs[1] := 0;
-
-  for i := 0 to WEIGHT_SIZE - 1 do
-  begin
-    Weights[i] := i+1;
-    Results[i] := 0;
-  end;
-
-  BufferInputs := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], INPUT_SIZE * SizeOf(Single), @Inputs[0]);
-  BufferOutputs := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], OUTPUT_SIZE * SizeOf(Single), @Outputs[0]);
-  BufferWeights := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], WEIGHT_SIZE * SizeOf(Single), @Weights[0]);
-  BufferResults := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], RESULT_SIZE * SizeOf(Single), @Results[0]);
-
-  FKernelMultiply.Arguments[0].Access.SetBuffer(BufferInputs);
-  FKernelMultiply.Arguments[1].Access.SetBuffer(BufferWeights);
-  FKernelMultiply.Arguments[2].Access.SetBuffer(BufferResults);
-  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(INPUT_SIZE);
-  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(OUTPUT_SIZE);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([INPUT_SIZE, OUTPUT_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferResults, True, @Results[0]);
-
-  for i := 0 to RESULT_SIZE - 1 do
-    FLog.Add(Format('Results[%d] = %f', [i, Results[i]]));
-
-  FLog.Add('');
-
-  FKernelSigmoide.Arguments[0].Access.SetBuffer(BufferResults);
-  FKernelSigmoide.Arguments[1].Access.SetBuffer(BufferOutputs);
-  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(INPUT_SIZE);
-  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(OUTPUT_SIZE);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([OUTPUT_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferOutputs, True, @Outputs[0]);
-
-  for i := 0 to OUTPUT_SIZE - 1 do
-    FLog.Add(Format('Outputs[%d] = %f', [i, Outputs[i]]));
-
-  FLog.Add('');
-end;
-
-procedure TNeuralNetworkOpenCL.UpdateWeights;
-const
-  HIDDEN_SIZE = 3;
-  OUTPUT_SIZE = 2;
-  WEIGHT_SIZE = HIDDEN_SIZE * OUTPUT_SIZE;
-  NEURON_SIZE = HIDDEN_SIZE;
-  DELTA_SIZE  = OUTPUT_SIZE;
-  ETA = 0.35;
-var
-  Weights: array[0..WEIGHT_SIZE - 1] of Single;
-  Neurons: array[0..NEURON_SIZE - 1] of Single;
-  Delta:   array[0..DELTA_SIZE - 1] of Single;
-
-  BufferWeights: IOCLBuffer;
-  BufferNeurons: IOCLBuffer;
-  BufferDelta: IOCLBuffer;
-
-  i: Integer;
-begin
-  Weights[0] := 1;
-  Weights[1] := 2;
-  Weights[2] := 3;
-  Weights[3] := 4;
-  Weights[4] := 5;
-  Weights[5] := 6;
-
-  Neurons[0] := 0.2;
-  Neurons[1] := 0.3;
-  Neurons[2] := 0.4;
-
-  Delta[0] := 0.04192;
-  Delta[1] := 0.10332;
-
-  BufferWeights := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], WEIGHT_SIZE * SizeOf(Single), @Weights[0]);
-  BufferNeurons := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], NEURON_SIZE * SizeOf(Single), @Neurons[0]);
-  BufferDelta := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], DELTA_SIZE * SizeOf(Single), @Delta[0]);
-
-  FKernelUpdateWeights.Arguments[0].Access.SetBuffer(BufferWeights);
-  FKernelUpdateWeights.Arguments[1].Access.SetBuffer(BufferNeurons);
-  FKernelUpdateWeights.Arguments[2].Access.SetBuffer(BufferDelta);
-  FKernelUpdateWeights.Arguments[3].Access.SetValue<Cardinal>(NEURON_SIZE);
-  FKernelUpdateWeights.Arguments[4].Access.SetValue<Cardinal>(DELTA_SIZE);
-  FKernelUpdateWeights.Arguments[5].Access.SetValue<Single>(ETA);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelUpdateWeights, TOCLGlobalDimensions.Create([NEURON_SIZE, DELTA_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferWeights, True, @Weights[0]);
-
-  for i := 0 to WEIGHT_SIZE - 1 do
-    FLog.Add(Format('Weights[%d] = %.6f', [i, Weights[i]]));
-
-  FLog.Add('');
-end;
-
-procedure TNeuralNetworkOpenCL.BackPropagation(ASample: PSample);
-var
-  i, iSample: Integer;
-begin
-  FLog.Add('BackPropagation');
-  for i := 0 to FTopology.Output - 1 do
-  begin
-    iSample := FTopology.Input + i;
-    FSampleOutput[i] := ASample^[iSample];
-
-    FLog.AddFmt('FSampleOutput[%d]=%.6f', [i, FSampleOutput[i]]);
-  end;
-  FLog.Add('');
-  FCommandQueue.EnqueueWriteBuffer(FBufferSampleOutput, True, @FSampleOutput[0]);
-
-  {$REGION 'Delta OUTPUT'}
-  FKernelDeltaOutput.Arguments[0].Access.SetBuffer(FBufferNeuronsOutput);
-  FKernelDeltaOutput.Arguments[1].Access.SetBuffer(FBufferSampleOutput);
-  FKernelDeltaOutput.Arguments[2].Access.SetBuffer(FBufferDeltaOutput);
-  FKernelDeltaOutput.Arguments[3].Access.SetValue<Cardinal>(FTopology.Output);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelDeltaOutput, TOCLGlobalDimensions.Create([FTopology.Output]));
-  FCommandQueue.EnqueueReadBuffer(FBufferDeltaOutput, True, @FDeltaOutput[0]);
-
-  for i := 0 to FTopology.Output - 1 do
-    FLog.Add(Format('DeltaOutput[%d] = %.6f', [i, FDeltaOutput[i]]));
-
-  FLog.Add('');
-  {$ENDREGION}
-
-  {$REGION 'Delta HIDDEN'}
-  FKernelDeltaHidden.Arguments[0].Access.SetBuffer(FBufferNeuronsHidden);
-  FKernelDeltaHidden.Arguments[1].Access.SetBuffer(FBufferDeltaOutput);
-  FKernelDeltaHidden.Arguments[2].Access.SetBuffer(FBufferWHiddenOutput);
-  FKernelDeltaHidden.Arguments[3].Access.SetBuffer(FBufferDeltaHidden);
-  FKernelDeltaHidden.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
-  FKernelDeltaHidden.Arguments[5].Access.SetValue<Cardinal>(FTopology.Output);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelDeltaHidden, TOCLGlobalDimensions.Create([FTopology.Hidden + 1]));  // +1 for BIAS
-  FCommandQueue.EnqueueReadBuffer(FBufferDeltaHidden, True, @FDeltaHidden[0]);
-
-  for i := 0 to FTopology.Hidden {+1 for BIAS} do
-    FLog.Add(Format('DeltaHidden[%d] = %.6f', [i, FDeltaHidden[i]]));
-
-  FLog.Add('');
-  {$ENDREGION}
-
-
-  {$REGION 'Update Weights HIDDEN --> OUTPUT'}
-  FKernelUpdateWeights.Arguments[0].Access.SetBuffer(FBufferWHiddenOutput);
-  FKernelUpdateWeights.Arguments[1].Access.SetBuffer(FBufferNeuronsHidden);
-  FKernelUpdateWeights.Arguments[2].Access.SetBuffer(FBufferDeltaOutput);
-  FKernelUpdateWeights.Arguments[3].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
-  FKernelUpdateWeights.Arguments[4].Access.SetValue<Cardinal>(FTopology.Output);
-  FKernelUpdateWeights.Arguments[5].Access.SetValue<Single>(ETA);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelUpdateWeights, TOCLGlobalDimensions.Create([FTopology.Hidden + 1, FTopology.Output]));
-  FCommandQueue.EnqueueReadBuffer(FBufferWHiddenOutput, True, @FWHiddenOutput[0]);
-
-  for i := 0 to ((FTopology.Hidden + 1) * FTopology.Output) - 1 do
-    FLog.Add(Format('FWHiddenOutput[%d] = %.6f', [i, FWHiddenOutput[i]]));
-
-  FLog.Add('');
-  {$ENDREGION}
-
-  {$REGION 'Update Weights INPUT --> HIDDEN'}
-  FKernelUpdateWeights.Arguments[0].Access.SetBuffer(FBufferWInputHidden);
-  FKernelUpdateWeights.Arguments[1].Access.SetBuffer(FBufferNeuronsInput);
-  FKernelUpdateWeights.Arguments[2].Access.SetBuffer(FBufferDeltaHidden);
-  FKernelUpdateWeights.Arguments[3].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
-  FKernelUpdateWeights.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden); // +1 ???
-  FKernelUpdateWeights.Arguments[5].Access.SetValue<Single>(ETA);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelUpdateWeights, TOCLGlobalDimensions.Create([FTopology.Input + 1, FTopology.Hidden]));
-  FCommandQueue.EnqueueReadBuffer(FBufferWInputHidden, True, @FWInputHidden[0]);
-
-  for i := 0 to ((FTopology.Input + 1) * FTopology.Hidden) - 1 do
-    FLog.Add(Format('FWInputHidden[%d] = %.6f', [i, FWInputHidden[i]]));
-
-  FLog.Add('');
-  {$ENDREGION}
+  inherited;
 end;
 
 procedure TNeuralNetworkOpenCL.BuildKernel;
@@ -478,23 +107,67 @@ begin
   FKernelDeltaOutput := AProgram.Kernel['calculateDeltaOutput'];
   FKernelDeltaHidden := AProgram.Kernel['calculateDeltaHidden'];
   FKernelUpdateWeights := AProgram.Kernel['updateWeights'];
+  FKernelParams := AProgram.Kernel['params'];
 
   FCommandQueue := FContext.CreateCommandQueue();
 end;
 
-constructor TNeuralNetworkOpenCL.Create(ATopology: TTopology);
+function TNeuralNetworkOpenCL.GetOpenCLSource(const AResourceName: string): string;
+var
+  ResStream: TResourceStream;
+  slResource: TStringList;
 begin
-  inherited;
+  ResStream := TResourceStream.Create(hInstance, AResourceName, RT_RCDATA);
+  slResource := TStringList.Create;
+  try
+    slResource.LoadFromStream(ResStream);
+    Result := slResource.Text;
+  finally
+    ResStream.Free;
+    slResource.Free;
+  end;
+end;
 
-  SetLength(FSumInputHidden, (FTopology.Input + 1) * FTopology.Hidden);
-  SetLength(FSumHiddenOutput, (FTopology.Hidden + 1) * FTopology.Output);
-  SetLength(FSampleOutput, FTopology.Output);
+procedure TNeuralNetworkOpenCL.SetSamples(ASamples: TVectorSingle; ACount: Cardinal);
+begin
+  FSamples := ASamples;
+  FSamplesCount := ACount;
+end;
 
-  BuildKernel;
+procedure TNeuralNetworkOpenCL.Learn(AEpochs: Cardinal);
+var
+  i: Integer;
+  j: Integer;
+begin
+  CreateBuffers;
+  WriteBufferToGPU;
 
-  FBufferNeuronsInput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Input + 1) * SizeOf(Single), @FNeuronsInput[0]); // +1 for BIAS
-  FBufferNeuronsHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Hidden + 1) * SizeOf(Single), @FNeuronsHidden[0]); // +1 for BIAS
-  FBufferNeuronsOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], ATopology.Output * SizeOf(Single), @FNeuronsOutput[0]);
+  for i := 1 to AEpochs do
+  begin
+    for j := 0 to FSamplesCount - 1 do
+    begin
+      FeedForward(j);
+      BackPropagation(j);
+    end;
+  end;
+  FCommandQueue.Finish;
+end;
+
+procedure TNeuralNetworkOpenCL.CreateBuffers;
+var
+  SampleSize: Word;
+  BufferSize: Cardinal;
+begin
+  // TODO : improve memory access
+
+  SampleSize := FTopology.Input + 1 + FTopology.Output; // +1 for BIAS
+  BufferSize := SampleSize * FSamplesCount * SizeOf(Single);
+
+  FBufferSamples := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], BufferSize, @FSamples[0]);
+
+  //FBufferNeuronsInput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * SizeOf(Single), @FNeuronsInput[0]); // +1 for BIAS
+  FBufferNeuronsHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * SizeOf(Single), @FNeuronsHidden[0]); // +1 for BIAS
+  FBufferNeuronsOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], FTopology.Output * SizeOf(Single), @FNeuronsOutput[0]);
 
   FBufferWInputHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * FTopology.Hidden * SizeOf(Single), @FWInputHidden[0]);
   FBufferWHiddenOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * FTopology.Output * SizeOf(Single), @FWHiddenOutput[0]);
@@ -502,10 +175,199 @@ begin
   FBufferSumInputHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * FTopology.Hidden * SizeOf(Single), @FSumInputHidden[0]);
   FBufferSumHiddenOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * FTopology.Output * SizeOf(Single), @FSumHiddenOutput[0]);
 
-  FBufferDeltaOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Output) * SizeOf(Single), @FDeltaOutput[0]);
-  FBufferDeltaHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (ATopology.Hidden + 1) * SizeOf(Single), @FDeltaHidden[0]); // +1 for BIAS
+  FBufferDeltaOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Output) * SizeOf(Single), @FDeltaOutput[0]);
+  FBufferDeltaHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * SizeOf(Single), @FDeltaHidden[0]); // +1 for BIAS
+end;
 
-  FBufferSampleOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], ATopology.Output * SizeOf(Single), @FSampleOutput[0]);
+procedure TNeuralNetworkOpenCL.WriteBufferToGPU;
+begin
+  FCommandQueue.EnqueueWriteBuffer(FBufferSamples, True, @FSamples[0]);
+
+  //FCommandQueue.EnqueueWriteBuffer(FBufferNeuronsInput, True, @FNeuronsInput[0]);
+  FCommandQueue.EnqueueWriteBuffer(FBufferNeuronsHidden, True, @FNeuronsHidden[0]);
+  FCommandQueue.EnqueueWriteBuffer(FBufferNeuronsOutput, True, @FNeuronsOutput[0]);
+
+  FCommandQueue.EnqueueWriteBuffer(FBufferWInputHidden, True, @FWInputHidden[0]);
+  FCommandQueue.EnqueueWriteBuffer(FBufferWHiddenOutput, True, @FWHiddenOutput[0]);
+
+  FCommandQueue.EnqueueWriteBuffer(FBufferSumInputHidden, True, @FSumInputHidden[0]);
+  FCommandQueue.EnqueueWriteBuffer(FBufferSumHiddenOutput, True, @FSumHiddenOutput[0]);
+
+  FCommandQueue.EnqueueWriteBuffer(FBufferDeltaOutput, True, @FDeltaOutput[0]);
+  FCommandQueue.EnqueueWriteBuffer(FBufferDeltaHidden, True, @FDeltaHidden[0]);
+
+  FCommandQueue.Finish;
+end;
+
+procedure TNeuralNetworkOpenCL.FeedForward(iSample: Cardinal);
+var
+//  i: Integer;
+  InputOffSet: Cardinal;
+begin
+//  FLog.Add('FeedForward');
+
+//  for i := 0 to FTopology.Input - 1 do
+//  begin
+//    FNeuronsInput[i] := FSamplesSet.Samples[iSample][i];
+//    FLog.AddFmt('FNeuronsInput[%d]=%.6f', [i, FNeuronsInput[i]]);
+//  end;
+//  FLog.Add('');
+//  FCommandQueue.EnqueueWriteBuffer(FBufferNeuronsInput, True, @FNeuronsInput[0]);
+
+
+  {$REGION 'Calcular ativação INPUT --> HIDDEN'}
+  InputOffSet := iSample * (FTopology.Input + 1 + FTopology.Output); // +1 for BIAS
+
+  FKernelMultiply.Arguments[0].Access.SetBuffer(FBufferSamples);
+  FKernelMultiply.Arguments[1].Access.SetBuffer(FBufferWInputHidden);
+  FKernelMultiply.Arguments[2].Access.SetBuffer(FBufferSumInputHidden);
+  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(InputOffSet);
+  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
+  FKernelMultiply.Arguments[5].Access.SetValue<Cardinal>(FTopology.Hidden);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([FTopology.Input + 1, FTopology.Hidden]));  // +1 for BIAS
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferSumInputHidden, True, @FSumInputHidden[0]);
+
+//  for i := 0 to (FTopology.Input + 1) * FTopology.Hidden - 1 do
+//    FLog.Add(Format('FSumInputHidden[%d] = %.6f', [i, FSumInputHidden[i]]));
+//  FLog.Add('');
+
+  FKernelSigmoide.Arguments[0].Access.SetBuffer(FBufferSumInputHidden);
+  FKernelSigmoide.Arguments[1].Access.SetBuffer(FBufferNeuronsHidden);
+  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
+  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(FTopology.Hidden);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([FTopology.Hidden]));
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferNeuronsHidden, True, @FNeuronsHidden[0]);
+
+//  for i := 0 to FTopology.Hidden - 1 do
+//    FLog.Add(Format('FNeuronsHidden[%d] = %.6f', [i, FNeuronsHidden[i]]));
+//  FLog.Add('');
+  {$ENDREGION}
+
+
+  {$REGION 'Calcular ativação HIDDEN --> OUTPUT'}
+  FKernelMultiply.Arguments[0].Access.SetBuffer(FBufferNeuronsHidden);
+  FKernelMultiply.Arguments[1].Access.SetBuffer(FBufferWHiddenOutput);
+  FKernelMultiply.Arguments[2].Access.SetBuffer(FBufferSumHiddenOutput);
+  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(0);
+  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
+  FKernelMultiply.Arguments[5].Access.SetValue<Cardinal>(FTopology.Output);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([FTopology.Hidden + 1, FTopology.Output]));
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferSumHiddenOutput, True, @FSumHiddenOutput[0]);
+
+//  for i := 0 to (FTopology.Hidden + 1) * FTopology.Output - 1 do
+//    FLog.Add(Format('FSumHiddenOutput[%d] = %.6f', [i, FSumHiddenOutput[i]]));
+//  FLog.Add('');
+
+  FKernelSigmoide.Arguments[0].Access.SetBuffer(FBufferSumHiddenOutput);
+  FKernelSigmoide.Arguments[1].Access.SetBuffer(FBufferNeuronsOutput);
+  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
+  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(FTopology.Output);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([FTopology.Output]));
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferNeuronsOutput, True, @FNeuronsOutput[0]);
+
+//  for i := 0 to FTopology.Output - 1 do
+//    FLog.Add(Format('FNeuronsOutput[%d] = %.6f', [i, FNeuronsOutput[i]]));
+//  FLog.Add('');
+  {$ENDREGION}
+end;
+
+procedure TNeuralNetworkOpenCL.BackPropagation(iSample: Cardinal);
+var
+  //i, iOutput: Integer;
+  OutputOffset: Cardinal;
+  NeuronOffset: Cardinal;
+begin
+//  FLog.Add('BackPropagation');
+//  for i := 0 to FTopology.Output - 1 do
+//  begin
+//    iOutput := FTopology.Input + i;
+//    FSampleOutput[i] := FSamplesSet.Samples[iSample][iOutput];
+//
+//    FLog.AddFmt('FSampleOutput[%d]=%.6f', [i, FSampleOutput[i]]);
+//  end;
+//  FLog.Add('');
+//  FCommandQueue.EnqueueWriteBuffer(FBufferSampleOutput, True, @FSampleOutput[0]);
+
+  {$REGION 'Delta OUTPUT'}
+  OutputOffset := iSample * (FTopology.Input + 1 + FTopology.Output) + FTopology.Input; // +1 for BIAS
+
+  FKernelDeltaOutput.Arguments[0].Access.SetBuffer(FBufferNeuronsOutput);
+  FKernelDeltaOutput.Arguments[1].Access.SetBuffer(FBufferSamples);
+  FKernelDeltaOutput.Arguments[2].Access.SetBuffer(FBufferDeltaOutput);
+  FKernelDeltaOutput.Arguments[3].Access.SetValue<Cardinal>(FTopology.Output);
+  FKernelDeltaOutput.Arguments[4].Access.SetValue<Cardinal>(OutputOffset);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelDeltaOutput, TOCLGlobalDimensions.Create([FTopology.Output]));
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferDeltaOutput, True, @FDeltaOutput[0]);
+
+//  for i := 0 to FTopology.Output - 1 do
+//    FLog.Add(Format('DeltaOutput[%d] = %.6f', [i, FDeltaOutput[i]]));
+//  FLog.Add('');
+  {$ENDREGION}
+
+  {$REGION 'Delta HIDDEN'}
+  FKernelDeltaHidden.Arguments[0].Access.SetBuffer(FBufferNeuronsHidden);
+  FKernelDeltaHidden.Arguments[1].Access.SetBuffer(FBufferDeltaOutput);
+  FKernelDeltaHidden.Arguments[2].Access.SetBuffer(FBufferWHiddenOutput);
+  FKernelDeltaHidden.Arguments[3].Access.SetBuffer(FBufferDeltaHidden);
+  FKernelDeltaHidden.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
+  FKernelDeltaHidden.Arguments[5].Access.SetValue<Cardinal>(FTopology.Output);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelDeltaHidden, TOCLGlobalDimensions.Create([FTopology.Hidden + 1]));  // +1 for BIAS
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferDeltaHidden, True, @FDeltaHidden[0]);
+
+//  for i := 0 to FTopology.Hidden {+1 for BIAS} do
+//    FLog.Add(Format('DeltaHidden[%d] = %.6f', [i, FDeltaHidden[i]]));
+//  FLog.Add('');
+  {$ENDREGION}
+
+  {$REGION 'Update Weights HIDDEN --> OUTPUT'}
+  NeuronOffset := 0;
+  FKernelUpdateWeights.Arguments[0].Access.SetBuffer(FBufferWHiddenOutput);
+  FKernelUpdateWeights.Arguments[1].Access.SetBuffer(FBufferNeuronsHidden);
+  FKernelUpdateWeights.Arguments[2].Access.SetBuffer(FBufferDeltaOutput);
+  FKernelUpdateWeights.Arguments[3].Access.SetValue<Single>(NeuronOffset);
+  FKernelUpdateWeights.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
+  FKernelUpdateWeights.Arguments[5].Access.SetValue<Cardinal>(FTopology.Output);
+  FKernelUpdateWeights.Arguments[6].Access.SetValue<Single>(ETA);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelUpdateWeights, TOCLGlobalDimensions.Create([FTopology.Hidden + 1, FTopology.Output]));
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferWHiddenOutput, True, @FWHiddenOutput[0]);
+
+//  for i := 0 to ((FTopology.Hidden + 1) * FTopology.Output) - 1 do
+//    FLog.Add(Format('FWHiddenOutput[%d] = %.6f', [i, FWHiddenOutput[i]]));
+//  FLog.Add('');
+  {$ENDREGION}
+
+  {$REGION 'Update Weights INPUT --> HIDDEN'}
+  NeuronOffset := iSample * (FTopology.Input + 1 + FTopology.Output); // +1 for BIAS
+  FKernelUpdateWeights.Arguments[0].Access.SetBuffer(FBufferWInputHidden);
+  FKernelUpdateWeights.Arguments[1].Access.SetBuffer(FBufferSamples);
+  FKernelUpdateWeights.Arguments[2].Access.SetBuffer(FBufferDeltaHidden);
+  FKernelUpdateWeights.Arguments[3].Access.SetValue<Cardinal>(NeuronOffset);
+  FKernelUpdateWeights.Arguments[4].Access.SetValue<Cardinal>(FTopology.Input + 1); // +1 for BIAS
+  FKernelUpdateWeights.Arguments[5].Access.SetValue<Cardinal>(FTopology.Hidden);
+  FKernelUpdateWeights.Arguments[6].Access.SetValue<Single>(ETA);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelUpdateWeights, TOCLGlobalDimensions.Create([FTopology.Input + 1, FTopology.Hidden]));
+  //FCommandQueue.Finish;
+  //FCommandQueue.EnqueueReadBuffer(FBufferWInputHidden, True, @FWInputHidden[0]);
+
+//  for i := 0 to ((FTopology.Input + 1) * FTopology.Hidden) - 1 do
+//    FLog.Add(Format('FWInputHidden[%d] = %.6f', [i, FWInputHidden[i]]));
+//  FLog.Add('');
+  {$ENDREGION}
 end;
 
 end.
