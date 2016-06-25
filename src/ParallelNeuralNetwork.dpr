@@ -6,7 +6,7 @@ uses
   Vcl.Forms,
   uMain in 'uMain.pas' {Form1},
   uSamples in 'uSamples.pas',
-  uNeuralNetwork in 'uNeuralNetwork.pas',
+  uNeuralNetworkSequential in 'uNeuralNetworkSequential.pas',
   uNeuralNetworkOpenCL in 'uNeuralNetworkOpenCL.pas',
   uNeuralNetworkBase in 'uNeuralNetworkBase.pas',
   uHelpers in 'uHelpers.pas',

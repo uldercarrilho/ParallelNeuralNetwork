@@ -6,31 +6,40 @@ uses
   uTypes;
 
 type
-  PSample = ^TSample;
-  TSample = array of Single;
-  TSamples = array of TSample;
-
   TSamplesSet = class
   private
     FInputSize: Word;
     FOutputSize: Word;
-    FSampleSize: Cardinal;
-    FSamples: TSamples;
+    FSampleSize: Cardinal;  // FInputSize + FOutputSize
+    FSamples1D: TVector1D;  // usado para "vetorizar" os dados de FSamples2D e enviá-los à GPU
+    FSamples2D: TVector2D;
     FSamplesCount: Cardinal;
   public
-    FRaw: TVectorSingle;
-
     constructor Create;
     destructor Destroy; override;
-
+    /// <summary>
+    ///  Carrega os dados em memória do arquivo informado no parâmetro AFileName.
+    /// </summary>
+    /// <param name="AFileName">
+    ///  Nome do arquivo onde estão os dados estão armazenados no formato CSV.
+    /// </param>
+    /// <param name="AInputSize">
+    ///  Tamanho (quantidade de colunas) da camada de entrada.
+    /// </param>
+    /// <param name="AOutputSize">
+    ///  Tamanho (quantidade de colunas) da camada de saída.
+    /// </param>
+    /// <param name="ADelimiter">
+    ///  Delimitador dos valores.
+    /// </param>
     procedure LoadCSVFile(const AFileName: string; const AInputSize, AOutputSize: Word; const ADelimiter: Char);
 
     property InputSize: Word read FInputSize;
     property OutputSize: Word read FOutputSize;
     property SampleSize: Cardinal read FSampleSize;
-    property Samples: TSamples read FSamples;
+    property Samples1D: TVector1D read FSamples1D;
+    property Samples2D: TVector2D read FSamples2D;
     property SamplesCount: Cardinal read FSamplesCount;
-
   end;
 
 implementation
@@ -50,55 +59,54 @@ end;
 
 destructor TSamplesSet.Destroy;
 begin
-  SetLength(FSamples, 0);
+  SetLength(FSamples1D, 0);
+  SetLength(FSamples2D, 0);
   inherited;
 end;
 
 procedure TSamplesSet.LoadCSVFile(const AFileName: string; const AInputSize, AOutputSize: Word; const ADelimiter: Char);
 var
-  Row, Col: Cardinal;
+  iRow, iCol, iCount: Cardinal;
   CSVFile: TStringList;
   Line: TStringList;
-  i: Integer;
 begin
-  // TODO : lançar exceção
   if not FileExists(AFileName) then
-    Exit;
+    raise Exception.CreateFmt('O arquivo %s não existe.', [AFileName]);
 
-  // TODO : lançar exceção
   if ADelimiter = '' then
-    Exit;
+    raise Exception.Create('É necessário informar um delimitador para carregar os dados no formato CSV.');
 
-  FInputSize := AInputSize;
-  FOutputSize := AOutputSize;
-  FSampleSize := AInputSize + AOutputSize;
-
-  CSVFile := TStringList.Create;
   Line := TStringList.Create;
+  CSVFile := TStringList.Create;
   try
+    CSVFile.LoadFromFile(AFileName);
     Line.Delimiter := ADelimiter;
 
-    CSVFile.LoadFromFile(AFileName);
-
+    // armazena os parâmetros de entrada
+    FInputSize := AInputSize;
+    FOutputSize := AOutputSize;
+    FSampleSize := AInputSize + AOutputSize;
     FSamplesCount := CSVFile.Count;
 
-    SetLength(FSamples, FSamplesCount, FSampleSize);
-    SetLength(FRaw, FSamplesCount * (FSampleSize + 1)); // +1 for BIAS
+    // aloca memória para os dados
+    // para o vetor FSamples1D, o BIAS é armazenado para facilitar o processamento na GPU
+    SetLength(FSamples1D, FSamplesCount * (FSampleSize + 1)); // +1 for BIAS
+    SetLength(FSamples2D, FSamplesCount, FSampleSize);
 
-    i := 0;
-    for Row := 0 to FSamplesCount - 1 do
+    // carrega os dados nos vetores
+    iCount := 0;
+    for iRow := 0 to FSamplesCount - 1 do
     begin
-      Line.DelimitedText := CSVFile.Strings[Row];
+      Line.DelimitedText := CSVFile.Strings[iRow];
 
-      for Col := 0 to FSampleSize - 1 do
+      for iCol := 0 to FSampleSize - 1 do
       begin
-        FSamples[Row][Col] := StrToFloat(Line.Strings[Col]);
-        // usado para vetorizar os inputs
-        FRaw[i] := FSamples[Row][Col];
-        Inc(i);
+        FSamples2D[iRow][iCol] := StrToFloat(Line.Strings[iCol]);
+        FSamples1D[iCount] := FSamples2D[iRow][iCol];
+        Inc(iCount);
       end;
-      FRaw[i] := 1;
-      Inc(i);
+      FSamples1D[iCount] := 1;  // BIAS
+      Inc(iCount);
     end;
   finally
     FreeAndNil(Line);

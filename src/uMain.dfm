@@ -35,31 +35,22 @@ object Form1: TForm1
     Height = 13
     Caption = 'Epochs Computed: 0'
   end
-  object btnLoad: TButton
-    Left = 529
-    Top = 71
-    Width = 75
-    Height = 25
-    Caption = 'Load'
-    TabOrder = 0
-    OnClick = btnLoadClick
-  end
   object mmoLog: TMemo
     Left = 8
     Top = 200
     Width = 596
     Height = 569
     ScrollBars = ssBoth
-    TabOrder = 1
+    TabOrder = 0
   end
-  object btnLearn: TButton
+  object btnSequential: TButton
     Left = 530
     Top = 102
     Width = 75
     Height = 25
-    Caption = 'Learn'
-    TabOrder = 2
-    OnClick = btnLearnClick
+    Caption = 'Sequential'
+    TabOrder = 1
+    OnClick = btnSequentialClick
   end
   object seEpochs: TSpinEdit
     Left = 344
@@ -68,7 +59,7 @@ object Form1: TForm1
     Height = 22
     MaxValue = 0
     MinValue = 0
-    TabOrder = 3
+    TabOrder = 2
     Value = 1000
   end
   object edtEta: TEdit
@@ -76,7 +67,7 @@ object Form1: TForm1
     Top = 27
     Width = 121
     Height = 21
-    TabOrder = 4
+    TabOrder = 3
     Text = '0,15'
   end
   object grpTopology: TGroupBox
@@ -85,7 +76,7 @@ object Form1: TForm1
     Width = 185
     Height = 73
     Caption = ' Topology '
-    TabOrder = 5
+    TabOrder = 4
     object lblInput: TLabel
       Left = 11
       Top = 17
@@ -146,7 +137,7 @@ object Form1: TForm1
     EditLabel.Width = 40
     EditLabel.Height = 13
     EditLabel.Caption = 'Data file'
-    TabOrder = 6
+    TabOrder = 5
     Text = 
       'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Wine\wi' +
       'ne-red-normal.csv'
@@ -159,7 +150,7 @@ object Form1: TForm1
     EditLabel.Width = 56
     EditLabel.Height = 13
     EditLabel.Caption = 'Weights file'
-    TabOrder = 7
+    TabOrder = 6
     Text = 
       'D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\Wine\wi' +
       'ne-red-weights.csv'
@@ -170,7 +161,7 @@ object Form1: TForm1
     Width = 23
     Height = 23
     Caption = '...'
-    TabOrder = 8
+    TabOrder = 7
     OnClick = btnDataClick
   end
   object btnWeights: TButton
@@ -179,7 +170,7 @@ object Form1: TForm1
     Width = 23
     Height = 23
     Caption = '...'
-    TabOrder = 9
+    TabOrder = 8
     OnClick = btnWeightsClick
   end
   object btnTests: TButton
@@ -188,26 +179,17 @@ object Form1: TForm1
     Width = 75
     Height = 25
     Caption = 'Tests'
-    TabOrder = 10
+    TabOrder = 9
     OnClick = btnTestsClick
   end
-  object btnGPU: TButton
-    Left = 529
-    Top = 40
+  object btnParallel: TButton
+    Left = 532
+    Top = 42
     Width = 75
     Height = 25
-    Caption = 'GPU'
-    TabOrder = 11
-    OnClick = btnGPUClick
-  end
-  object btnKernels: TButton
-    Left = 529
-    Top = 9
-    Width = 75
-    Height = 25
-    Caption = 'Kernels'
-    TabOrder = 12
-    OnClick = btnKernelsClick
+    Caption = 'Parallel'
+    TabOrder = 10
+    OnClick = btnParallelClick
   end
   object dlgFiles: TOpenDialog
     Filter = 'CSV File (*.csv)|*.csv'

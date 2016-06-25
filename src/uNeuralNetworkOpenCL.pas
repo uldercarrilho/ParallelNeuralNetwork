@@ -35,7 +35,7 @@ type
     FSumInputHidden: array of Single;
     FSumHiddenOutput: array of Single;
 
-    FSamples: TVectorSingle;
+    FSamples: TVector1D;
     FSamplesCount: Cardinal;
 
     function GetOpenCLSource(const AResourceName: string): string;
@@ -49,7 +49,7 @@ type
     procedure BuildKernel;
     procedure WriteBufferToGPU;
 
-    procedure SetSamples(ASamples: TVectorSingle; ACount: Cardinal);
+    procedure SetSamples(ASamples: TVector1D; ACount: Cardinal);
     procedure Learn(AEpochs: Cardinal); overload;
   end;
 
@@ -128,7 +128,7 @@ begin
   end;
 end;
 
-procedure TNeuralNetworkOpenCL.SetSamples(ASamples: TVectorSingle; ACount: Cardinal);
+procedure TNeuralNetworkOpenCL.SetSamples(ASamples: TVector1D; ACount: Cardinal);
 begin
   FSamples := ASamples;
   FSamplesCount := ACount;
@@ -169,8 +169,8 @@ begin
   FBufferNeuronsHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * SizeOf(Single), @FNeuronsHidden[0]); // +1 for BIAS
   FBufferNeuronsOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], FTopology.Output * SizeOf(Single), @FNeuronsOutput[0]);
 
-  FBufferWInputHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * FTopology.Hidden * SizeOf(Single), @FWInputHidden[0]);
-  FBufferWHiddenOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * FTopology.Output * SizeOf(Single), @FWHiddenOutput[0]);
+  FBufferWInputHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * FTopology.Hidden * SizeOf(Single), @FWeights1DInputHidden[0]);
+  FBufferWHiddenOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * FTopology.Output * SizeOf(Single), @FWeights1DHiddenOutput[0]);
 
   FBufferSumInputHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * FTopology.Hidden * SizeOf(Single), @FSumInputHidden[0]);
   FBufferSumHiddenOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * FTopology.Output * SizeOf(Single), @FSumHiddenOutput[0]);
@@ -187,8 +187,8 @@ begin
   FCommandQueue.EnqueueWriteBuffer(FBufferNeuronsHidden, True, @FNeuronsHidden[0]);
   FCommandQueue.EnqueueWriteBuffer(FBufferNeuronsOutput, True, @FNeuronsOutput[0]);
 
-  FCommandQueue.EnqueueWriteBuffer(FBufferWInputHidden, True, @FWInputHidden[0]);
-  FCommandQueue.EnqueueWriteBuffer(FBufferWHiddenOutput, True, @FWHiddenOutput[0]);
+  FCommandQueue.EnqueueWriteBuffer(FBufferWInputHidden, True, @FWeights1DInputHidden[0]);
+  FCommandQueue.EnqueueWriteBuffer(FBufferWHiddenOutput, True, @FWeights1DHiddenOutput[0]);
 
   FCommandQueue.EnqueueWriteBuffer(FBufferSumInputHidden, True, @FSumInputHidden[0]);
   FCommandQueue.EnqueueWriteBuffer(FBufferSumHiddenOutput, True, @FSumHiddenOutput[0]);

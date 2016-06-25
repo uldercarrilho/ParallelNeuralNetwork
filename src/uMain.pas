@@ -9,10 +9,9 @@ uses
 
 type
   TForm1 = class(TForm)
-    btnLoad: TButton;
     mmoLog: TMemo;
     dlgFiles: TOpenDialog;
-    btnLearn: TButton;
+    btnSequential: TButton;
     seEpochs: TSpinEdit;
     lblEpochs: TLabel;
     edtEta: TEdit;
@@ -30,18 +29,16 @@ type
     lblEta: TLabel;
     lblEpochsComputed: TLabel;
     btnTests: TButton;
-    btnGPU: TButton;
-    btnKernels: TButton;
-    procedure btnLoadClick(Sender: TObject);
+    btnParallel: TButton;
     procedure btnDataClick(Sender: TObject);
     procedure btnWeightsClick(Sender: TObject);
     procedure btnTestsClick(Sender: TObject);
-    procedure btnKernelsClick(Sender: TObject);
-    procedure btnLearnClick(Sender: TObject);
-    procedure btnGPUClick(Sender: TObject);
+    procedure btnSequentialClick(Sender: TObject);
+    procedure btnParallelClick(Sender: TObject);
   private
     { Private declarations }
     procedure Learn(ANeuralNetwork: TNeuralNetworkBase);
+    procedure TestKernel;
   public
     { Public declarations }
   end;
@@ -52,7 +49,10 @@ var
 implementation
 
 uses
-  uSamples, uNeuralNetwork, uNeuralNetworkOpenCL, uNeuralNetworkOpenCLTests;
+  uSamples, uHelpers, uNeuralNetworkSequential, uNeuralNetworkOpenCL, uNeuralNetworkOpenCLTests;
+
+const
+  DELIMITER = ';';
 
 {$R *.dfm}
 
@@ -62,34 +62,39 @@ begin
     lbledtData.Text := dlgFiles.FileName;
 end;
 
-procedure TForm1.btnGPUClick(Sender: TObject);
-const
-  DELIMITER = ';';
+procedure TForm1.btnWeightsClick(Sender: TObject);
+begin
+  if dlgFiles.Execute then
+    lbledtWeights.Text := dlgFiles.FileName;
+end;
+
+procedure TForm1.btnParallelClick(Sender: TObject);
 var
   Topology: TTopology;
   Samples: TSamplesSet;
-  //Epochs: Integer;
   TickCount: Cardinal;
   NeuralNetwork: TNeuralNetworkOpenCL;
 begin
-  mmoLog.Lines.Add('GPU');
+  mmoLog.Lines.Add('Running parallel algorithm on GPU');
 
   Topology.Input := seInput.Value;
   Topology.Hidden := seHidden.Value;
   Topology.Output := seOutput.Value;
 
+  Samples := TSamplesSet.Create;
   try
-    Samples := TSamplesSet.Create;
     Samples.LoadCSVFile(lbledtData.Text, Topology.Input, Topology.Output, DELIMITER);
+
+    mmoLog.Lines.BeginUpdate;
 
     NeuralNetwork := TNeuralNetworkOpenCL.Create(Topology);
     NeuralNetwork.Log := mmoLog.Lines;
     NeuralNetwork.Eta := StrToFloat(edtEta.Text);
-    NeuralNetwork.SetSamples(Samples.FRaw, Samples.SamplesCount);
+    NeuralNetwork.SetSamples(Samples.Samples1D, Samples.SamplesCount);
     NeuralNetwork.LoadWeights('C:\Temp\weights_20160524-204255.csv'); // wine-red 11x20x1
     //NeuralNetwork.DefineRandomWeights;
 
-    mmoLog.Lines.BeginUpdate;
+
 
     TickCount := TThread.GetTickCount;
 
@@ -97,7 +102,7 @@ begin
 
     TickCount := TThread.GetTickCount - TickCount;
 
-    mmoLog.Lines.Add('TickCount = ' + IntToStr(TickCount));
+    mmoLog.Lines.AddFmt('Learn time: %d ms ', [TickCount]);
     mmoLog.Lines.Add('');
 
     //NeuralNetwork.SaveWeights(lbledtWeights.Text);
@@ -109,120 +114,66 @@ begin
   end;
 end;
 
-procedure TForm1.btnKernelsClick(Sender: TObject);
-var
-  NNOpenCL: TNeuralNetworkOpenCLTests;
-  Topology: TTopology;
-begin
-  Topology.Input := seInput.Value;
-  Topology.Hidden := seHidden.Value;
-  Topology.Output := seOutput.Value;
-  try
-    NNOpenCL := TNeuralNetworkOpenCLTests.Create(Topology);
-    NNOpenCL.Log := mmoLog.Lines;
-    NNOpenCL.BuildKernel;
-//    NNOpenCL.Multiply;
-//    NNOpenCL.DeltaOutput;
-//    NNOpenCL.DeltaHidden;
-//    NNOpenCL.UpdateWeights;
-    NNOpenCL.Params;
-  finally
-    FreeAndNil(NNOpenCL);
-  end;
-end;
-
-procedure TForm1.btnLearnClick(Sender: TObject);
+procedure TForm1.btnSequentialClick(Sender: TObject);
 var
   Topology: TTopology;
   ANeuralNetwork: TNeuralNetworkBase;
 begin
-  mmoLog.Lines.Add('CPU');
+  mmoLog.Lines.Clear;
+  mmoLog.Lines.Add('Running sequential algorithm on CPU');
   Topology.Input := seInput.Value;
   Topology.Hidden := seHidden.Value;
   Topology.Output := seOutput.Value;
 
   try
-    ANeuralNetwork := TNeuralNetwork.Create(Topology);
+    ANeuralNetwork := TNeuralNetworkSequential.Create(Topology);
     Learn(ANeuralNetwork);
   finally
     FreeAndNil(ANeuralNetwork);
   end;
 end;
 
-procedure TForm1.btnLoadClick(Sender: TObject);
-var
-  Samples: TSamplesSet;
-  Row, Col: Cardinal;
-  Line: string;
-begin
-  if not dlgFiles.Execute then
-    Exit;
-
-  mmoLog.Lines.Clear;
-
-  try
-    Samples :=  TSamplesSet.Create;
-    Samples.LoadCSVFile(dlgFiles.FileName, 2, 1, ',');
-    for Row := 0 to Samples.SamplesCount - 1 do
-    begin
-      Line := '';
-      for Col := 0 to Samples.SampleSize - 1 do
-        Line := Line + FloatToStr(Samples.Samples[Row][Col]) + ' | ';
-
-      mmoLog.Lines.Add(Line);
-    end;
-  finally
-    FreeAndNil(Samples);
-  end;
-end;
-
 procedure TForm1.btnTestsClick(Sender: TObject);
-const
-  DELIMITER = ';';
 var
-  Net: TNeuralNetwork;
+  Net: TNeuralNetworkSequential;
   Topology: TTopology;
   Samples: TSamplesSet;
+  Filename: TFileName;
 begin
+  mmoLog.Lines.Clear;
+
   Topology.Input := seInput.Value;
   Topology.Hidden := seHidden.Value;
   Topology.Output := seOutput.Value;
 
+  Samples := TSamplesSet.Create;
   try
-    Samples := TSamplesSet.Create;
+    mmoLog.Lines.BeginUpdate;
     Samples.LoadCSVFile(lbledtData.Text, Topology.Input, Topology.Output, DELIMITER);
 
-    Net := TNeuralNetwork.Create(Topology);
+    Net := TNeuralNetworkSequential.Create(Topology);
     Net.Log := mmoLog.Lines;
     Net.LoadWeights(lbledtWeights.Text);
+    Net.SamplesSet := Samples;
 
-    mmoLog.Lines.Clear;
-    mmoLog.Lines.BeginUpdate;
+    Net.Tests;
 
-    Net.Tests(Samples);
-
-    mmoLog.Lines.EndUpdate;
-    //mmoLog.Lines.SaveToFile('D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\tests.csv');
+    Filename := ExtractFilePath(lbledtData.Text) + 'tests_' + FormatDateTime('yyyymmdd-hhnnss', Now) + '.csv';
+    mmoLog.Lines.SaveToFile(Filename);
   finally
+    mmoLog.Lines.EndUpdate;
     FreeAndNil(Net);
     FreeAndNil(Samples);
   end;
 end;
 
-procedure TForm1.btnWeightsClick(Sender: TObject);
-begin
-  if dlgFiles.Execute then
-    lbledtWeights.Text := dlgFiles.FileName;
-end;
-
 procedure TForm1.Learn(ANeuralNetwork: TNeuralNetworkBase);
-const
-  DELIMITER = ';';
 var
   Topology: TTopology;
   Samples: TSamplesSet;
   Epochs: Integer;
   TickCount: Cardinal;
+  Filename: TFileName;
 begin
   Topology.Input := seInput.Value;
   Topology.Hidden := seHidden.Value;
@@ -239,8 +190,11 @@ begin
     ANeuralNetwork.Log := mmoLog.Lines;
     ANeuralNetwork.Eta := StrToFloat(edtEta.Text);
     ANeuralNetwork.SamplesSet := Samples;
-    ANeuralNetwork.LoadWeights('C:\Temp\weights_20160524-204255.csv'); // wine-red 11x20x1
-    //ANeuralNetwork.DefineRandomWeights;
+    //ANeuralNetwork.LoadWeights('C:\Temp\weights_20160524-204255.csv'); // wine-red 11x20x1
+    ANeuralNetwork.DefineRandomWeights;
+    Filename := ExtractFilePath(ParamStr(0)) + 'weights_' + FormatDateTime('yyyymmdd-hhnnss', Now) + '.csv';
+    ANeuralNetwork.SaveWeights(Filename);
+
 
     mmoLog.Lines.BeginUpdate;
 
@@ -273,6 +227,30 @@ begin
     //mmoLog.Lines.SaveToFile('D:\Libraries\Documents\GitHub\ParallelNeuralNetwork\data\trained.csv');
   finally
     FreeAndNil(Samples);
+  end;
+end;
+
+procedure TForm1.TestKernel;
+var
+  NNOpenCL: TNeuralNetworkOpenCLTests;
+  Topology: TTopology;
+begin
+  // TODO : refatorar método para testar individualmente cada funcionalidade do Kernel
+
+  Topology.Input := seInput.Value;
+  Topology.Hidden := seHidden.Value;
+  Topology.Output := seOutput.Value;
+  try
+    NNOpenCL := TNeuralNetworkOpenCLTests.Create(Topology);
+    NNOpenCL.Log := mmoLog.Lines;
+//    NNOpenCL.BuildKernel;
+//    NNOpenCL.Multiply;
+//    NNOpenCL.DeltaOutput;
+//    NNOpenCL.DeltaHidden;
+//    NNOpenCL.UpdateWeights;
+//    NNOpenCL.Params;
+  finally
+    FreeAndNil(NNOpenCL);
   end;
 end;
 
