@@ -15,6 +15,8 @@ type
     Output: Word;
   end;
 
+  TNeuralNetworkBaseClass = class of TNeuralNetworkBase;
+
   TNeuralNetworkBase = class
   protected
     // dados e configurações da rede neural
@@ -75,6 +77,16 @@ type
     /// </remarks>
     procedure LoadWeights(const AFileName: string);
     /// <summary>
+    ///  Método utilizado para preparar os dados antes de iniciar o treinamento da rede neural.
+    /// </summary>
+    /// <returns>
+    ///  None
+    /// </returns>
+    /// <remarks>
+    ///  Remarks
+    /// </remarks>
+    procedure Prepare; virtual;
+    /// <summary>
     ///  Executa 1 época da etapa de aprendizagem, ou seja, computa o FeedForward e Backpropagation para todas as
     ///  entradas do conjunto de amostras.
     /// </summary>
@@ -82,7 +94,7 @@ type
     ///  A condição de parada do método é computar todas as entradas do conjunto de amostras. Não há um controle de
     ///  parada com base na margem de erro do previsto e computado.
     /// </remarks>
-    procedure Learn;
+    procedure Learn(AEpochs: Cardinal); virtual; abstract;
 
     /// <summary>
     ///  ETA representa o coeficiente de aprendizagem da rede, que varia de 0 a 1. O valor padrão é 0,15.
@@ -90,6 +102,7 @@ type
     property Eta: Single read FEta write FEta;
     property Log: TStrings read FLog write FLog;
     property SamplesSet: TSamplesSet read FSamplesSet write FSamplesSet;
+    property Topology: TTopology read FTopology;
   end;
 
 implementation
@@ -259,25 +272,9 @@ begin
   end;
 end;
 
-procedure TNeuralNetworkBase.Learn;
-var
-  Row: Integer;
-  Sample: PVector1D;
-  Error: Single;
+procedure TNeuralNetworkBase.Prepare;
 begin
-  Error := 0;
-  for Row := 0 to FSamplesSet.SamplesCount - 1 do
-  begin
-    FeedForward(Row);
-    BackPropagation(Row);
-
-    Sample := @FSamplesSet.Samples2D[Row];
-    //Error := Error + Abs((Sample^[FTopology.Input]) - Abs(FNeuronsOutput[0]));
-    Error := Error + Power(Sample^[FTopology.Input] - FNeuronsOutput[0], 2);
-  end;
-  //Error := Error / FSamplesSet.SamplesCount;
-  Error := Error / 2;
-  FLog.Add(FloatToStr(Error));
+  // não precisa fazer nada na classe base
 end;
 
 end.

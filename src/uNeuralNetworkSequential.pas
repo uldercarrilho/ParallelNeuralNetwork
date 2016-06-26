@@ -44,12 +44,6 @@ type
     /// <param name="RowSample">
     ///  Índice da amostra que está sendo computada.
     /// </param>
-    /// <returns>
-    ///  None
-    /// </returns>
-    /// <remarks>
-    ///  Remarks
-    /// </remarks>
     procedure FeedForward(RowSample: Cardinal); override;
     /// <summary>
     ///  Calcula a etapa de backpropagation do algoritmo de aprendizagem da rede neural. Nesta etapa, é calculado o
@@ -70,6 +64,15 @@ type
     ///  treinamento da rede neural.
     /// </param>
     procedure Tests;
+    /// <summary>
+    ///  Executa a etapa de aprendizagem, ou seja, computa o FeedForward e Backpropagation para todas as entradas do
+    ///  conjunto de amostras, repetindo AEpochs vezes.
+    /// </summary>
+    /// <remarks>
+    ///  A condição de parada do método é computar todas as entradas do conjunto de amostras. Não há um controle de
+    ///  parada com base na margem de erro do previsto e computado.
+    /// </remarks>
+    procedure Learn(AEpochs: Cardinal); override;
   end;
 
 implementation
@@ -181,6 +184,31 @@ begin
   begin
     FeedForward(Row);
     ReportResults(Row);
+  end;
+end;
+
+procedure TNeuralNetworkSequential.Learn(AEpochs: Cardinal);
+var
+  Row: Integer;
+  Sample: PVector1D;
+  Error: Single;
+  i: Integer;
+begin
+  for i := 1 to AEpochs do
+  begin
+    Error := 0;
+    for Row := 0 to FSamplesSet.SamplesCount - 1 do
+    begin
+      FeedForward(Row);
+      BackPropagation(Row);
+
+      Sample := @FSamplesSet.Samples2D[Row];
+      //Error := Error + Abs((Sample^[FTopology.Input]) - Abs(FNeuronsOutput[0]));
+      Error := Error + Power(Sample^[FTopology.Input] - FNeuronsOutput[0], 2);
+    end;
+    //Error := Error / FSamplesSet.SamplesCount;
+    Error := Error / 2;
+    FLog.AddFmt('Training epoch %d | Error: %1.8f', [i, Error]);
   end;
 end;
 
