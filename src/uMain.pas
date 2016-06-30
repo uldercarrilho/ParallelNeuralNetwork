@@ -140,7 +140,7 @@ begin
     TickCount := TThread.GetTickCount;
     NeuralNetwork.Learn(seEpochs.Value);
     TickCount := TThread.GetTickCount - TickCount;
-    mmoLog.Lines.AddFmt('Learn time: %d ms ', [TickCount]);
+    mmoLog.Lines.AddFmt('Total training time: %d ms ', [TickCount]);
 
     // armazena os pesos atualizados
     Filename := ExtractFilePath(edtTrainingData.Text) + 'weights_' + FormatDateTime('yyyymmdd-hhnnss', Now) + '.csv';

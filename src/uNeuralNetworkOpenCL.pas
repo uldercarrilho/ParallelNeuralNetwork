@@ -141,8 +141,10 @@ var
   APlatform: IOCLPlatform;
   AProgram: IOCLProgram;
   i: Integer;
+  TickCount: Cardinal;
 begin
   FLog.Add('Building kernel OpenCL');
+  TickCount := TThread.GetTickCount;
 
   APlatform := TOpenCL.Platforms[0];
 
@@ -180,6 +182,9 @@ begin
 
   // cria a fila de execução dos kernels e demais comandos
   FCommandQueue := FContext.CreateCommandQueue();
+
+  TickCount := TThread.GetTickCount - TickCount;
+  FLog.AddFmt('Elapsed time: %d ms', [TickCount]);
 end;
 
 procedure TNeuralNetworkOpenCL.Learn(AEpochs: Cardinal);
@@ -212,13 +217,15 @@ procedure TNeuralNetworkOpenCL.CreateBuffers;
 var
   SampleSize: Word;
   BufferSize: Cardinal;
+  TickCount: Cardinal;
 begin
   FLog.Add('Creating buffers');
+  TickCount := TThread.GetTickCount;
 
   SampleSize := FTopology.Input + 1 + FTopology.Output; // +1 for BIAS
   BufferSize := SampleSize * FSamplesSet.SamplesCount * SizeOf(Single);
 
-  FBufferSamples := FContext.CreateBuffer([TOCLMemoryFlag.WriteOnly, TOCLMemoryFlag.UseHostPtr], BufferSize, @FSamplesSet.Samples1D[0]);
+  FBufferSamples := FContext.CreateBuffer([TOCLMemoryFlag.ReadOnly, TOCLMemoryFlag.UseHostPtr], BufferSize, @FSamplesSet.Samples1D[0]);
   // o FBufferNeuronsInput foi substituído pelo FBufferSamples para evitar cópia desnecessária de dados
   //FBufferNeuronsInput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Input + 1) * SizeOf(Single), @FNeuronsInput[0]); // +1 for BIAS
   FBufferNeuronsHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * SizeOf(Single), @FNeuronsHidden[0]); // +1 for BIAS
@@ -232,11 +239,17 @@ begin
 
   FBufferDeltaOutput := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Output) * SizeOf(Single), @FDeltaOutput[0]);
   FBufferDeltaHidden := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], (FTopology.Hidden + 1) * SizeOf(Single), @FDeltaHidden[0]); // +1 for BIAS
+
+  TickCount := TThread.GetTickCount - TickCount;
+  FLog.AddFmt('Elapsed time: %d ms', [TickCount]);
 end;
 
 procedure TNeuralNetworkOpenCL.WriteBufferToGPU;
+var
+  TickCount: Cardinal;
 begin
   FLog.Add('Sending buffers to GPU');
+  TickCount := TThread.GetTickCount;
 
   FCommandQueue.EnqueueWriteBuffer(FBufferSamples, True, @FSamplesSet.Samples1D[0]);
   // o FBufferNeuronsInput foi substituído pelo FBufferSamples para evitar cópia desnecessária de dados
@@ -253,7 +266,11 @@ begin
   FCommandQueue.EnqueueWriteBuffer(FBufferDeltaOutput, True, @FDeltaOutput[0]);
   FCommandQueue.EnqueueWriteBuffer(FBufferDeltaHidden, True, @FDeltaHidden[0]);
 
+  FCommandQueue.Flush;
   FCommandQueue.Finish;
+
+  TickCount := TThread.GetTickCount - TickCount;
+  FLog.AddFmt('Elapsed time: %d ms', [TickCount]);
 end;
 
 procedure TNeuralNetworkOpenCL.FeedForward(iSample: Cardinal);
