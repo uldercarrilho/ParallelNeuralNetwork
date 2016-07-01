@@ -16,6 +16,8 @@ type
     FKernelDeltaHidden: IOCLKernel;
     FKernelUpdateWeights: IOCLKernel;
     FKernelParams: IOCLKernel;
+    FKernelGemm1: IOCLKernel;
+    FKernelActive: IOCLKernel;
 
     FBufferSamples: IOCLBuffer;
     // o FBufferNeuronsInput foi substituído pelo FBufferSamples para evitar cópia desnecessária de dados
@@ -69,6 +71,7 @@ type
     ///  Índice da amostra que está sendo computada.
     /// </param>
     procedure FeedForward(iSample: Cardinal); override;
+    procedure FeedForwardOneKernel(iSample: Cardinal);
     /// <summary>
     ///  Calcula a etapa de backpropagation do algoritmo de aprendizagem da rede neural. Nesta etapa, é calculado o
     ///  Delta que representa o quanto a resposta está diferente do esperado e depois utiliza este valor para atualizar
@@ -94,6 +97,8 @@ type
     ///  parada com base na margem de erro do previsto e computado.
     /// </remarks>
     procedure Learn(AEpochs: Cardinal); override;
+    procedure Multiply;
+    procedure LogMatrix(Matrix: PVector1D; M, N: Integer);
   end;
 
 implementation
@@ -179,6 +184,8 @@ begin
   FKernelDeltaHidden := AProgram.Kernel['calculateDeltaHidden'];
   FKernelUpdateWeights := AProgram.Kernel['updateWeights'];
   FKernelParams := AProgram.Kernel['params'];
+  FKernelGemm1 := AProgram.Kernel['myGEMM1'];
+  FKernelActive := AProgram.Kernel['active'];
 
   // cria a fila de execução dos kernels e demais comandos
   FCommandQueue := FContext.CreateCommandQueue();
@@ -205,6 +212,96 @@ begin
       FCommandQueue.Finish;
     end;
   end;
+end;
+
+procedure TNeuralNetworkOpenCL.LogMatrix(Matrix: PVector1D; M, N: Integer);
+var
+  i, j: Integer;
+  Line: string;
+begin
+  for i := 0 to M - 1 do
+  begin
+    Line := '';
+    for j := 0 to N - 1 do
+      Line := Line + FloatToStr(Matrix^[i*N + j]) + ' ';
+
+    FLog.Add(Line);
+  end;
+end;
+
+procedure TNeuralNetworkOpenCL.Multiply;
+const
+  M = 1;
+  N = 3;
+  K = 4;
+var
+  MatrixA, MatrixB, MatrixC: TVector1D;
+  BufferA, BufferB, BufferC: IOCLBuffer;
+begin
+  SetLength(MatrixA, M * K);
+  SetLength(MatrixB, K * N);
+  SetLength(MatrixC, M * N);
+
+  MatrixA[0] := 1;
+  MatrixA[1] := 2;
+  MatrixA[2] := 3;
+  MatrixA[3] := 4;
+
+  MatrixB[0]  := 1;
+  MatrixB[1]  := 2;
+  MatrixB[2]  := 3;
+  MatrixB[3]  := 4;
+  MatrixB[4]  := 5;
+  MatrixB[5]  := 6;
+  MatrixB[6]  := 7;
+  MatrixB[7]  := 8;
+  MatrixB[8]  := 9;
+  MatrixB[9]  := 10;
+  MatrixB[10] := 11;
+  MatrixB[11] := 12;
+
+  MatrixC[0] := 0;
+  MatrixC[1] := 0;
+  MatrixC[2] := 0;
+
+  FLog.Add('Matrix A');
+  LogMatrix(@MatrixA, M, K);
+  FLog.Add('');
+
+  FLog.Add('Matrix B');
+  LogMatrix(@MatrixB, K, N);
+  FLog.Add('');
+
+  FLog.Add('Matrix C');
+  LogMatrix(@MatrixC, M, N);
+  FLog.Add('');
+
+  BufferA := FContext.CreateBuffer([TOCLMemoryFlag.ReadOnly, TOCLMemoryFlag.UseHostPtr], M * K * SizeOf(Single), @MatrixA[0]);
+  BufferB := FContext.CreateBuffer([TOCLMemoryFlag.ReadOnly, TOCLMemoryFlag.UseHostPtr], K * N * SizeOf(Single), @MatrixB[0]);
+  BufferC := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], M * N * SizeOf(Single), @MatrixC[0]);
+
+  FCommandQueue.EnqueueWriteBuffer(BufferA, True, @MatrixA[0]);
+  FCommandQueue.EnqueueWriteBuffer(BufferB, True, @MatrixB[0]);
+  FCommandQueue.EnqueueWriteBuffer(BufferC, True, @MatrixC[0]);
+
+  FKernelGemm1.Arguments[0].Access.SetValue<Integer>(M);
+  FKernelGemm1.Arguments[1].Access.SetValue<Integer>(N);
+  FKernelGemm1.Arguments[2].Access.SetValue<Integer>(K);
+  FKernelGemm1.Arguments[3].Access.SetBuffer(BufferA);
+  FKernelGemm1.Arguments[4].Access.SetBuffer(BufferB);
+  FKernelGemm1.Arguments[5].Access.SetBuffer(BufferC);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelGemm1, TOCLGlobalDimensions.Create([M, N]));
+
+  FCommandQueue.EnqueueReadBuffer(BufferC, True, @MatrixC[0]);
+
+  FLog.Add('Matrix C = A * B');
+  LogMatrix(@MatrixC, M, N);
+  FLog.Add('');
+
+  SetLength(MatrixA, 0);
+  SetLength(MatrixB, 0);
+  SetLength(MatrixC, 0);
 end;
 
 procedure TNeuralNetworkOpenCL.Prepare;
@@ -277,6 +374,9 @@ procedure TNeuralNetworkOpenCL.FeedForward(iSample: Cardinal);
 var
   InputOffSet: Cardinal;
 begin
+  FeedForwardOneKernel(iSample);
+  Exit;
+
   {$REGION 'Calcular ativação INPUT --> HIDDEN'}
   InputOffSet := iSample * (FTopology.Input + 1 + FTopology.Output); // +1 for BIAS
 
@@ -319,6 +419,7 @@ begin
   FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(FTopology.Hidden + 1); // +1 for BIAS
   FKernelMultiply.Arguments[5].Access.SetValue<Cardinal>(FTopology.Output);
 
+  //TOCLGlobalAndLocalDimensions.Create(10, 2);
   FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([FTopology.Hidden + 1, FTopology.Output]));
   // DEBUG
   // FCommandQueue.Finish;
@@ -341,6 +442,48 @@ begin
   // for i := 0 to FTopology.Output - 1 do
   //   FLog.Add(Format('FNeuronsOutput[%d] = %.6f', [i, FNeuronsOutput[i]]));
   // FLog.Add('');
+  {$ENDREGION}
+end;
+
+procedure TNeuralNetworkOpenCL.FeedForwardOneKernel(iSample: Cardinal);
+var
+  M, N, K: Integer;
+  InputOffSet: Integer;
+begin
+// 	Média: 1153 -- FeedForward
+//  Média: 921  -- FeedForwardOneKernel
+
+  {$REGION 'Calcular ativação INPUT --> HIDDEN'}
+  M := 1; // 1 amostra
+  N := FTopology.Hidden;
+  K := FTopology.Input + 1; // +1 for BIAS
+  InputOffSet := iSample * (FTopology.Input + 1 + FTopology.Output); // +1 for BIAS
+
+  FKernelActive.Arguments[0].Access.SetValue<Integer>(M);
+  FKernelActive.Arguments[1].Access.SetValue<Integer>(N);
+  FKernelActive.Arguments[2].Access.SetValue<Integer>(K);
+  FKernelActive.Arguments[3].Access.SetValue<Integer>(InputOffSet);
+  FKernelActive.Arguments[4].Access.SetBuffer(FBufferSamples);
+  FKernelActive.Arguments[5].Access.SetBuffer(FBufferWInputHidden);
+  FKernelActive.Arguments[6].Access.SetBuffer(FBufferNeuronsHidden);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelActive, TOCLGlobalDimensions.Create([M, N]));
+  {$ENDREGION}
+
+  {$REGION 'Calcular ativação HIDDEN --> OUTPUT'}
+  M := 1; // 1 amostra
+  N := FTopology.Output;
+  K := FTopology.Hidden + 1; // +1 for BIAS
+
+  FKernelActive.Arguments[0].Access.SetValue<Integer>(M);
+  FKernelActive.Arguments[1].Access.SetValue<Integer>(N);
+  FKernelActive.Arguments[2].Access.SetValue<Integer>(K);
+  FKernelActive.Arguments[3].Access.SetValue<Integer>(0);
+  FKernelActive.Arguments[4].Access.SetBuffer(FBufferNeuronsHidden);
+  FKernelActive.Arguments[5].Access.SetBuffer(FBufferWHiddenOutput);
+  FKernelActive.Arguments[6].Access.SetBuffer(FBufferNeuronsOutput);
+
+  FCommandQueue.EnqueueNDRangeKernel(FKernelActive, TOCLGlobalDimensions.Create([M, N]));
   {$ENDREGION}
 end;
 

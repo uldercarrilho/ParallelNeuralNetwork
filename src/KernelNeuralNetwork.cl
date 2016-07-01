@@ -1,10 +1,51 @@
+// First naive implementation
+__kernel void myGEMM1(const int M, const int N, const int K,
+                      const __global float* A,
+                      const __global float* B,
+                      __global float* C) {
+    
+    // Thread identifiers
+    const int globalRow = get_global_id(0); // Row ID of C (0..M)
+    const int globalCol = get_global_id(1); // Col ID of C (0..N)
+ 
+    // Compute a single element (loop over K)
+    float sum = 0.0f;
+    for (int i = 0; i < K; i++) {
+        sum += A[globalRow * K + i] * B[i * N + globalCol];
+    }
+ 
+    // Store the result
+    C[globalRow*N + globalCol] = sum;
+    //C[globalRow*N + globalCol] = 1 / (1 + exp(-sum));
+}
+
+__kernel void active(const int M, const int N, const int K, const uint offsetA,
+                      const __global float* A,
+                      const __global float* B,
+                      __global float* C) {
+    
+    // Thread identifiers
+    const int globalRow = get_global_id(0); // Row ID of C (0..M)
+    const int globalCol = get_global_id(1); // Col ID of C (0..N)
+ 
+    // Compute a single element (loop over K)
+    float sum = 0.0f;
+    for (int i = 0; i < K; i++) {
+        sum += A[offsetA + globalRow * K + i] * B[i * N + globalCol];
+    }
+ 
+    // Store the result
+    C[globalRow*N + globalCol] = sum;
+    //C[globalRow*N + globalCol] = 1 / (1 + exp(-sum));
+}
+
 __kernel void multiply(
-    __global float* inputs,
-    __global float* weights,
-    __global float* results,
-    uint inputOffset,
-    uint inputSize,
-    uint outputSize)
+    __global const float *inputs,
+    __global const float *weights,
+    __global float *results,
+    uint const inputOffset,
+    uint const inputSize,
+    uint const outputSize)
 {
     uint inputId = get_global_id(0);
     uint outputId = get_global_id(1);
@@ -21,10 +62,10 @@ __kernel void multiply(
 }
 
 __kernel void sigmoide(
-    __global float* multiplies,
-    __global float* outputs,
-    uint inputSize,
-    uint outputSize)
+    __global const float *multiplies,
+    __global float *outputs,
+    uint const inputSize,
+    uint const outputSize)
 {
     uint outputId = get_global_id(0);
     if (outputId >= outputSize)
@@ -42,11 +83,11 @@ __kernel void sigmoide(
 }
 
 __kernel void calculateDeltaOutput(
-    __global float* outputs,
-    __global float* samples,
-    __global float* results,
-    uint outputSize,
-    uint samplesOffset)
+    __global const float *outputs,
+    __global const float *samples,
+    __global float *results,
+    uint const outputSize,
+    uint const samplesOffset)
 {
     uint outputId = get_global_id(0);
     if (outputId >= outputSize)
@@ -59,12 +100,12 @@ __kernel void calculateDeltaOutput(
 }
 
 __kernel void calculateDeltaHidden(
-    __global float* hidden,
-    __global float* deltaOutput,
-    __global float* weights,
-    __global float* results,
-    uint hiddenSize,
-    uint outputSize)
+    __global const float *hidden,
+    __global const float *deltaOutput,
+    __global const float *weights,
+    __global float *results,
+    uint const hiddenSize,
+    uint const outputSize)
 {
     uint hiddenId = get_global_id(0);
     if (hiddenId >= hiddenSize)
@@ -83,12 +124,12 @@ __kernel void calculateDeltaHidden(
 
 __kernel void updateWeights(
     __global float* weights,
-    __global float* neurons,
-    __global float* delta,
-    uint neuronOffset,
-    uint neuronSize,
-    uint deltaSize,
-    float eta)
+    __global const float *neurons,
+    __global const float *delta,
+    uint const neuronOffset,
+    uint const neuronSize,
+    uint const deltaSize,
+    float const eta)
 {
     uint neuronId = get_global_id(0);
     uint deltaId  = get_global_id(1);

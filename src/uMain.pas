@@ -38,6 +38,7 @@ type
     btnTestsData: TButton;
     edtTestsWeights: TLabeledEdit;
     btnTestsWeights: TButton;
+    btnMultiply: TButton;
     procedure btnTrainingDataClick(Sender: TObject);
     procedure btnTrainingWeightsClick(Sender: TObject);
     procedure btnTestsClick(Sender: TObject);
@@ -45,6 +46,7 @@ type
     procedure btnParallelClick(Sender: TObject);
     procedure btnTestsDataClick(Sender: TObject);
     procedure btnTestsWeightsClick(Sender: TObject);
+    procedure btnMultiplyClick(Sender: TObject);
   private
     { Private declarations }
     procedure Learn(ANeuralNetworkClass: TNeuralNetworkBaseClass);
@@ -87,6 +89,25 @@ procedure TForm1.btnTestsWeightsClick(Sender: TObject);
 begin
   if dlgFiles.Execute then
     edtTestsWeights.Text := dlgFiles.FileName;
+end;
+
+procedure TForm1.btnMultiplyClick(Sender: TObject);
+var
+  Topology: TTopology;
+  Net: TNeuralNetworkOpenCL;
+begin
+  Topology.Input := seInput.Value;
+  Topology.Hidden := seHidden.Value;
+  Topology.Output := seOutput.Value;
+
+  Net := TNeuralNetworkOpenCL.Create(Topology);
+  try
+    Net.Log := mmoLog.Lines;
+    Net.Prepare;
+    Net.Multiply;
+  finally
+    FreeAndNil(Net);
+  end;
 end;
 
 procedure TForm1.btnParallelClick(Sender: TObject);
