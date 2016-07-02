@@ -1,52 +1,29 @@
-__kernel void multiply(
-    __global float* inputs,
-    __global float* weights,
-    __global float* results,
-    uint inputOffset,
-    uint inputSize,
-    uint outputSize)
+__kernel void feedForward(
+    const int M, const int N, const int K, const int offsetInput,
+    __global const float *input,
+    __global const float *weights,
+    __global float *results)
 {
-    uint inputId = get_global_id(0);
-    uint outputId = get_global_id(1);
-    
-    if (inputId >= inputSize)
-        return;
-    
-    if (outputId >= outputSize)
-        return;
-
-    uint id = inputId * outputSize + outputId;
-
-    results[id] = inputs[inputOffset + inputId] * weights[id];
-}
-
-__kernel void sigmoide(
-    __global float* multiplies,
-    __global float* outputs,
-    uint inputSize,
-    uint outputSize)
-{
-    uint outputId = get_global_id(0);
-    if (outputId >= outputSize)
-        return;
-
+    // Thread identifiers
+    const int globalRow = get_global_id(0); // Row ID of results (0..M)
+    const int globalCol = get_global_id(1); // Col ID of results (0..N)
+ 
+    // Compute a single element (loop over K)
     float sum = 0.0f;
-    uint id;
-    for (uint i = 0; i < inputSize; i++)
-    {
-        id = i * outputSize + outputId;
-        sum += multiplies[id];
+    for (int i = 0; i < K; i++) {
+        sum += input[offsetInput + globalRow * K + i] * weights[i * N + globalCol];
     }
-
-    outputs[outputId] = 1 / (1 + exp(-sum));
+ 
+    // Calculate sigmoide
+    results[globalRow * N + globalCol] = 1 / (1 + exp(-sum));
 }
 
 __kernel void calculateDeltaOutput(
-    __global float* outputs,
-    __global float* samples,
-    __global float* results,
-    uint outputSize,
-    uint samplesOffset)
+    __global const float *outputs,
+    __global const float *samples,
+    __global float *results,
+    uint const outputSize,
+    uint const samplesOffset)
 {
     uint outputId = get_global_id(0);
     if (outputId >= outputSize)
@@ -59,12 +36,12 @@ __kernel void calculateDeltaOutput(
 }
 
 __kernel void calculateDeltaHidden(
-    __global float* hidden,
-    __global float* deltaOutput,
-    __global float* weights,
-    __global float* results,
-    uint hiddenSize,
-    uint outputSize)
+    __global const float *hidden,
+    __global const float *deltaOutput,
+    __global const float *weights,
+    __global float *results,
+    uint const hiddenSize,
+    uint const outputSize)
 {
     uint hiddenId = get_global_id(0);
     if (hiddenId >= hiddenSize)
@@ -83,12 +60,12 @@ __kernel void calculateDeltaHidden(
 
 __kernel void updateWeights(
     __global float* weights,
-    __global float* neurons,
-    __global float* delta,
-    uint neuronOffset,
-    uint neuronSize,
-    uint deltaSize,
-    float eta)
+    __global const float *neurons,
+    __global const float *delta,
+    uint const neuronOffset,
+    uint const neuronSize,
+    uint const deltaSize,
+    float const eta)
 {
     uint neuronId = get_global_id(0);
     uint deltaId  = get_global_id(1);
@@ -101,30 +78,4 @@ __kernel void updateWeights(
 
     uint id = neuronId * deltaSize + deltaId;
     weights[id] += eta * delta[deltaId] * neurons[neuronOffset + neuronId];
-}
-
-__kernel void params(
-    __global float* result,
-    __global float* param1,
-    __global float* param2,
-    __global float* param3,
-    __global float* param4,
-    __global float* param5,
-    __global float* param6,
-    __global float* param7,
-    __global float* param8,
-    __global float* param9)
-{
-    uint id = get_global_id(0);
-
-    result[id] = 
-        param1[id] + 
-        param2[id] + 
-        param3[id] + 
-        param4[id] + 
-        param5[id] + 
-        param6[id] + 
-        param7[id] + 
-        param8[id] + 
-        param9[id];
 }

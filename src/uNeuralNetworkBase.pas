@@ -65,7 +65,7 @@ type
     /// <param name="AFileName">
     ///  Caminho completo do arquivo que será criado para salvar o valor dos pesos.
     /// </param>
-    procedure SaveWeights(const AFileName: string);
+    procedure SaveWeights(const AFileName: string); virtual;
     /// <summary>
     ///  Carrega, a partir de um arquivo no formato CSV, o peso das conexões entre os neurônios.
     /// </summary>
@@ -164,7 +164,6 @@ end;
 procedure TNeuralNetworkBase.DefineRandomWeights;
 var
   i, h, o, k: Word;
-  Filename: string;
 begin
   //FLog.Add('DefineRandomWeights');
   Randomize;

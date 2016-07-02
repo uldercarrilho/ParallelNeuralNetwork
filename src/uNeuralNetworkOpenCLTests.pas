@@ -8,11 +8,9 @@ uses
 type
   TNeuralNetworkOpenCLTests = class(TNeuralNetworkOpenCL)
   public
-    procedure Multiply;
     procedure DeltaOutput;
     procedure DeltaHidden;
     procedure UpdateWeights;
-    procedure Params;
   end;
 
 implementation
@@ -119,107 +117,6 @@ begin
 
   for i := 0 to RESULT_SIZE - 1 do
     FLog.AddFmt('DeltaOutput[%d] = %.6f', [i, Results[i]]);
-  FLog.Add('');
-end;
-
-procedure TNeuralNetworkOpenCLTests.Multiply;
-const
-  INPUT_SIZE = 3;
-  OUTPUT_SIZE = 2;
-  WEIGHT_SIZE = INPUT_SIZE * OUTPUT_SIZE;
-  RESULT_SIZE = WEIGHT_SIZE;
-var
-  Inputs: array[0..INPUT_SIZE - 1] of Single;
-  Outputs: array[0..OUTPUT_SIZE - 1] of Single;
-  Weights: array[0..WEIGHT_SIZE - 1] of Single;
-  Results: array[0..RESULT_SIZE - 1] of Single;
-
-  BufferInputs: IOCLBuffer;
-  BufferOutputs: IOCLBuffer;
-  BufferWeights: IOCLBuffer;
-  BufferResults: IOCLBuffer;
-
-  i: Integer;
-begin
-  Inputs[0] := 2;
-  Inputs[1] := 3;
-  Inputs[2] := 5;
-
-  Outputs[0] := 0;
-  Outputs[1] := 0;
-
-  for i := 0 to WEIGHT_SIZE - 1 do
-  begin
-    Weights[i] := i+1;
-    Results[i] := 0;
-  end;
-
-  BufferInputs := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], INPUT_SIZE * SizeOf(Single), @Inputs[0]);
-  BufferOutputs := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], OUTPUT_SIZE * SizeOf(Single), @Outputs[0]);
-  BufferWeights := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], WEIGHT_SIZE * SizeOf(Single), @Weights[0]);
-  BufferResults := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], RESULT_SIZE * SizeOf(Single), @Results[0]);
-
-  FKernelMultiply.Arguments[0].Access.SetBuffer(BufferInputs);
-  FKernelMultiply.Arguments[1].Access.SetBuffer(BufferWeights);
-  FKernelMultiply.Arguments[2].Access.SetBuffer(BufferResults);
-  FKernelMultiply.Arguments[3].Access.SetValue<Cardinal>(INPUT_SIZE);
-  FKernelMultiply.Arguments[4].Access.SetValue<Cardinal>(OUTPUT_SIZE);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelMultiply, TOCLGlobalDimensions.Create([INPUT_SIZE, OUTPUT_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferResults, True, @Results[0]);
-
-  for i := 0 to RESULT_SIZE - 1 do
-    FLog.AddFmt('Results[%d] = %f', [i, Results[i]]);
-  FLog.Add('');
-
-  FKernelSigmoide.Arguments[0].Access.SetBuffer(BufferResults);
-  FKernelSigmoide.Arguments[1].Access.SetBuffer(BufferOutputs);
-  FKernelSigmoide.Arguments[2].Access.SetValue<Cardinal>(INPUT_SIZE);
-  FKernelSigmoide.Arguments[3].Access.SetValue<Cardinal>(OUTPUT_SIZE);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelSigmoide, TOCLGlobalDimensions.Create([OUTPUT_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferOutputs, True, @Outputs[0]);
-
-  for i := 0 to OUTPUT_SIZE - 1 do
-    FLog.AddFmt('Outputs[%d] = %f', [i, Outputs[i]]);
-  FLog.Add('');
-end;
-
-procedure TNeuralNetworkOpenCLTests.Params;
-const
-  VECTOR_SIZE = 1000;
-var
-  Values: array[0..VECTOR_SIZE] of Single;
-  Result: array[0..VECTOR_SIZE] of Single;
-  BufferValues: IOCLBuffer;
-  BufferResult: IOCLBuffer;
-  i: Integer;
-begin
-  for i := 0 to VECTOR_SIZE - 1 do
-  begin
-    Values[i] := i;
-    Result[i] := 0;
-  end;
-
-  BufferValues := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], VECTOR_SIZE * SizeOf(Single), @Values[0]);
-  BufferResult := FContext.CreateBuffer([TOCLMemoryFlag.ReadWrite, TOCLMemoryFlag.UseHostPtr], VECTOR_SIZE * SizeOf(Single), @Result[0]);
-
-  FKernelParams.Arguments[0].Access.SetBuffer(BufferResult);
-  FKernelParams.Arguments[1].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[2].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[3].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[4].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[5].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[6].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[7].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[8].Access.SetBuffer(BufferValues);
-  FKernelParams.Arguments[9].Access.SetBuffer(BufferValues);
-
-  FCommandQueue.EnqueueNDRangeKernel(FKernelParams, TOCLGlobalDimensions.Create([VECTOR_SIZE]));
-  FCommandQueue.EnqueueReadBuffer(BufferResult, True, @Result[0]);
-
-  for i := 0 to 10 do
-    FLog.AddFmt('Result[%d] = %.6f', [i, Result[i]]);
   FLog.Add('');
 end;
 
