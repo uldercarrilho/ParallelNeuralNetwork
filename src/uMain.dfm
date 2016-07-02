@@ -89,15 +89,6 @@ object Form1: TForm1
       TabOrder = 2
       Value = 1
     end
-    object btnMultiply: TButton
-      Left = 366
-      Top = 34
-      Width = 75
-      Height = 25
-      Caption = 'Multiply'
-      TabOrder = 3
-      OnClick = btnMultiplyClick
-    end
   end
   object grpTests: TGroupBox
     Left = 8
